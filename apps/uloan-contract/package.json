@@ -1,5 +1,5 @@
 {
-  "name": "uloan-contract",
+  "name": "@uloan/contract",
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
@@ -13,5 +13,10 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "^4.3.2"
+  },
+  "scripts": {
+    "startHardHatChain": "hardhat node",
+    "compile": "hardhat compile",
+    "deploy:local": "hardhat run scripts/deployToHardhat.js --network localhost"
   }
 }

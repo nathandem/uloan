@@ -6,6 +6,11 @@
   "repository": "https://github.com/nathandem/uloan",
   "license": "MIT",
   "private": true,
+  "scripts": {
+    "contract:startHardHatChain": "yarn workspace @uloan/contract startHardHatChain",
+    "contract:compile": "yarn workspace @uloan/contract compile && node scripts/copyULoanAbi.js",
+    "contract:deploy:local": "yarn contract:compile && yarn workspace @uloan/contract deploy:local"
+  },
   "workspaces": [
     "apps/uloan-contract",
     "apps/uloan-backend",

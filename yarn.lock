@@ -1011,6 +1011,20 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@uloan/contract@workspace:apps/uloan-contract":
+  version: 0.0.0-use.local
+  resolution: "@uloan/contract@workspace:apps/uloan-contract"
+  dependencies:
+    "@nomiclabs/hardhat-ethers": ^2.0.2
+    "@nomiclabs/hardhat-waffle": ^2.0.1
+    "@openzeppelin/contracts": ^4.3.2
+    chai: ^4.3.4
+    ethereum-waffle: ^3.4.0
+    ethers: ^5.4.7
+    hardhat: ^2.6.4
+  languageName: unknown
+  linkType: soft
+
 "@yarnpkg/lockfile@npm:^1.1.0":
   version: 1.1.0
   resolution: "@yarnpkg/lockfile@npm:1.1.0"
@@ -9532,20 +9546,6 @@ resolve@1.17.0:
   checksum: 6af04fefe50d90d3471f058b2cdc0f49b7436bdd605cd00acea7965926ff388a5a7d692ef144f45fccee6f8e896c065702ecc44b69057e2ce88c09e897c7d3a4
   languageName: node
   linkType: hard
-
-"uloan-contract@workspace:apps/uloan-contract":
-  version: 0.0.0-use.local
-  resolution: "uloan-contract@workspace:apps/uloan-contract"
-  dependencies:
-    "@nomiclabs/hardhat-ethers": ^2.0.2
-    "@nomiclabs/hardhat-waffle": ^2.0.1
-    "@openzeppelin/contracts": ^4.3.2
-    chai: ^4.3.4
-    ethereum-waffle: ^3.4.0
-    ethers: ^5.4.7
-    hardhat: ^2.6.4
-  languageName: unknown
-  linkType: soft
 
 "uloan@workspace:.":
   version: 0.0.0-use.local
