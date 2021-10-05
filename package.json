@@ -6,5 +6,10 @@
   "repository": "https://github.com/nathandem/uloan",
   "license": "MIT",
   "private": true,
+  "workspaces": [
+    "apps/uloan-contract",
+    "apps/uloan-backend",
+    "apps/uloan-web"
+  ],
   "packageManager": "yarn@3.0.2"
 }

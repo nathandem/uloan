@@ -13,3 +13,17 @@
 !.yarn/sdks
 !.yarn/versions
 .pnp.*
+
+# Files to ignore in uloan-contract
+apps/uloan-contract/cache
+apps/uloan-contract/artifacts
+
+# Files to ignore in uloan-web
+apps/uloan-web/build
+apps/uloan-web/.env*
+apps/uloan-web/npm-debug.log*
+apps/uloan-web/yarn-debug.log*
+apps/uloan-web/yarn-error.log*
+
+# Files to ignore in uloan-backend
+apps/uloan-backend/dist*
