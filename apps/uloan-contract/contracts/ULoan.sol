@@ -12,10 +12,16 @@ contract ULoan {
 
     IERC20 public stablecoin;  // TODO: allow admin to change this, in case of emergency with said stablecoin
 
+    uint16 public ULOAN_EPOCH_IN_DAYS = 7;  // arbitrary value to be debated
+
     uint256 public MIN_DEPOSIT_AMOUNT = 10e18;  // arbitrary value to be debated
-    uint256 public MIN_LOCKUP_PERIOD_IN_DAYS = 7;  // arbitrary value to be debated
+    uint256 public MIN_LOCKUP_PERIOD_IN_DAYS = ULOAN_EPOCH_IN_DAYS;  // arbitrary value to be debated
     uint256 public MIN_RISK_LEVEL = 1;
     uint256 public MAX_RISK_LEVEL = 100;
+
+    uint256 public MIN_LOAN_AMOUNT = MIN_DEPOSIT_AMOUNT;  // arbitrary value to be debated
+    uint256 public MIN_LOAN_DURATION_IN_DAYS = ULOAN_EPOCH_IN_DAYS;  // arbitrary value to be debated
+    uint256 public MAX_LOAN_DURATION_IN_DAYS = ULOAN_EPOCH_IN_DAYS * 52;  // arbitrary value to be debated
 
     // Note: *_IN_CENTILE refers to an internal representation of fixed-point numbers, with a precision to a hundredth.
     // For example, 100 means 1, 40 means 0.40
@@ -28,7 +34,7 @@ contract ULoan {
     // Lending and loan specific state
 
     struct FundedLoan {
-        uint256 loanId;  // the index at which to find the loan struct in `loans`
+        uint256 loanId;  // the key to find the loan struct in `loans`
         uint256 amountContributed;  // constant value, won't change over time
         uint256 amountToReceiveBack;  // constant value (amountContributed + expected interests), computed when capital is matched to the loan
         uint256 amountPaidBack;  // variable, grows as the borrower pays back the loans+interests
@@ -46,19 +52,22 @@ contract ULoan {
     mapping(uint256 => CapitalProvider) capitalProviders;
 
     struct Lender {
-        uint256 lenderId;  // the index at which to find the `CapitalProvider` struct in `capitalProviders`
+        uint256 lenderId;  // the key to find the `CapitalProvider` struct in `capitalProviders`
         uint256 amountContributed;  // constant, won't change over time
         uint256 amountToReceiveBack;  // constant (amountContributed + expected interests), computed when capital is matched to the loan
         uint256 amountPaidBack;  // variable, grows as the borrower pays back the loans+interests
     }
-    enum LoanState { Requested, Funded, Withdrawn, PayedBack, Closed }
+    enum LoanState { Requested, Funded, BeingPaidBack, PayedBack, Closed }
     struct Loan {
         address borrower;
         uint8 creditScore;
-        uint256 requestTimestamp;  // the timestamp of the block at which the borrower sent the loan request. To be used to cancel loans not fulfilled for too long
+        uint256 lastActionTimestamp;  // versatile variable storing the timestamp of the block at which the last action took place. An action occurs everytime the loan changes its state, when it is Requested, Funded, BeingPaidBack (in this state, refer to `numberOfEpochsPaid` to get a sense of the progress in repayment of the loan - and of potential delay) and PayedBack.
         uint16 durationInDays;
         uint256 amountRequested;
         uint256 amountToRepay;  // sums amountRequested + all the interest payments (i.e. amountRequested * (APY * durationInDays / 365))
+        uint16 totalNumberOfEpochsToPay;  // fixed value
+        uint16 numberOfEpochsPaid;  // increased by one every payment
+        uint256 amountToRepayEveryEpoch;
         Lender[] lenders;
         LoanState state;
         string closeReason;  // reason why the loan is Closed (to be sourced from an enum)
@@ -71,8 +80,11 @@ contract ULoan {
 
 
     // EVENTS
-    event NewCapitalProvided(uint256 capitalProviderIndex, uint256 amount, uint8 minRiskLevel, uint8 maxRiskLevel, uint16 lockUpPeriodInDays);
-    event CapitalRecouped(uint256 capitalProviderIndex, uint256 amountToRecoup);
+    event NewCapitalProvided(uint256 capitalProviderId, uint256 amount, uint8 minRiskLevel, uint8 maxRiskLevel, uint16 lockUpPeriodInDays);
+    event CapitalRecouped(uint256 capitalProviderId, uint256 amountToRecoup);
+    event LoanRequested(uint256 loanId, uint256 amount, uint8 borrowerCreditScore, uint16 durationInDays);
+    event LoanWithdrawn(uint256 loanId);
+    event LoanPaidBack(uint256 loanId);
 
 
     // CONSTRUCTOR
@@ -151,10 +163,10 @@ contract ULoan {
     /*
      * Lender gets back his money + interest (CapitalProvider.amountAvailable).
      */
-    function recoupCapital(uint256 _capitalProviderIndex) public {
-        require(_capitalProviderIndex <= lastCapitalProviderId, "This capital provider doesn't exist");
+    function recoupCapital(uint256 _capitalProviderId) public {
+        require(_capitalProviderId <= lastCapitalProviderId, "This capital provider doesn't exist");
 
-        CapitalProvider storage capitalProvider = capitalProviders[_capitalProviderIndex];
+        CapitalProvider storage capitalProvider = capitalProviders[_capitalProviderId];
         uint256 amountToRecoup = capitalProvider.amountAvailable;
 
         require(capitalProvider.lender == msg.sender, "You can't withdraw funds you didn't provide in the first place");
@@ -165,21 +177,117 @@ contract ULoan {
 
         capitalProvider.amountAvailable = 0;
 
-        emit CapitalRecouped(_capitalProviderIndex, amountToRecoup);
+        emit CapitalRecouped(_capitalProviderId, amountToRecoup);
     }
+
+    /*
+     * Returns an interest on a declarative basis. In other words, the prospective borrower is free to pass
+     * a credit score which doesn't correspond to the one he/she would receive when calling the dedicated function.
+     *
+     * Important note: the amount is return in centile.
+     */
+    function getInterestEstimate(uint256 _amount, uint8 _creditScore, uint16 _durationInDays) public view returns (uint16) {
+        require(_durationInDays >= MIN_LOAN_DURATION_IN_DAYS, "The lock-up period can't be shorter than MIN_LOAN_DURATION_IN_DAYS");
+        require(_durationInDays <= MAX_LOAN_DURATION_IN_DAYS, "The lock-up period can't be longer than MAX_LOAN_DURATION_IN_DAYS");
+        require(_durationInDays % ULOAN_EPOCH_IN_DAYS == 0, "The loan duration (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
+        require(_amount >= MIN_LOAN_AMOUNT, "The amount can't be lower than MIN_LOAN_AMOUNT");
+
+        return _computeBorrowerInterestRateInCentile(_creditScore, _durationInDays);
+    }
+
+    /*
+     * Initiate a loan request, which then needs to be matched with provided capital.
+     * Emit an event that any service looking to perform matching for the protocol can listen to.
+     */
+    function requestLoan(uint256 _amount, uint16 _durationInDays) public {
+        uint8 borrowerCreditScore = creditScores[msg.sender];
+        require(borrowerCreditScore > 0, "You must have a credit score to request a loan. Get one first!");
+        require(_durationInDays >= MIN_LOAN_DURATION_IN_DAYS, "The lock-up period can't be shorter than MIN_LOAN_DURATION_IN_DAYS");
+        require(_durationInDays <= MAX_LOAN_DURATION_IN_DAYS, "The lock-up period can't be longer than MAX_LOAN_DURATION_IN_DAYS");
+        require(_durationInDays % ULOAN_EPOCH_IN_DAYS == 0, "The loan duration (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
+        require(_amount >= MIN_LOAN_AMOUNT, "The amount can't be lower than MIN_LOAN_AMOUNT");
+
+        uint256 amountToRepay = _amount * (1 + _computeBorrowerInterestRateInCentile(borrowerCreditScore, _durationInDays));
+        uint16 totalNumberOfEpochsToPay = _durationInDays / ULOAN_EPOCH_IN_DAYS;
+
+        lastLoanId++;
+        Loan storage newLoan = loans[lastLoanId];
+        newLoan.borrower = msg.sender;
+        newLoan.creditScore = borrowerCreditScore;
+        newLoan.lastActionTimestamp = block.timestamp;
+        newLoan.durationInDays = _durationInDays;
+        newLoan.amountRequested = _amount;
+        newLoan.amountToRepay = amountToRepay;
+        newLoan.numberOfEpochsPaid = uint8(0);
+        newLoan.totalNumberOfEpochsToPay = totalNumberOfEpochsToPay;
+        newLoan.amountToRepayEveryEpoch = _amount / totalNumberOfEpochsToPay;
+        newLoan.state = LoanState.Requested;
+
+        emit LoanRequested(lastLoanId, _amount, borrowerCreditScore, _durationInDays);
+    }
+
+    function withdrawLoanFunds(uint256 _loanId) public {
+        Loan storage loan = loans[_loanId];
+
+        require(loan.borrower == msg.sender, "You cannot withdraw funds from a funds you didn't initiate");
+        require(loan.state == LoanState.Funded, "The loan must be funded to be withdrawn");
+
+        bool success = stablecoin.transfer(loan.borrower, loan.amountRequested);
+        require(success, "The transfer of funds failed");
+
+        loan.state = LoanState.BeingPaidBack;
+
+        emit LoanWithdrawn(_loanId);
+    }
+
+    /*
+     * Public function called by borrower, or programmatically by the crypto app user uses, to payback
+     * the loan according to the repayment schedule.
+     *
+     * Elements related to loan payment are the following:
+     * - ULOAN_EPOCH_IN_DAYS gives the frequency of payment in days
+     * - loan.lastActionTimestamp gives the last payment date/timestamp
+     * - loan.numberOfEpochsPaid gives the number of payments made since the emission of the loan
+     * - loan.totalNumberOfEpochsToPay gives the total amount of payments to be made to repay the loan in full
+     * - loan.amountToRepayEveryEpoch gives the amount to repay every epoch/period (in the stablecoin decimal)
+     */
+    function payLoan(uint _loanId) public {
+        Loan storage loan = loans[_loanId];
+
+        require(loan.borrower == msg.sender, "Loans should be paid back by those who initiate them");
+        require(loan.state == LoanState.BeingPaidBack, "The loan is ready for repayment yet");
+
+        bool success = stablecoin.transferFrom(msg.sender, address(this), loan.amountToRepayEveryEpoch);
+        require(success, "The transfer of funds failed, do you have enough funds?");
+
+        loan.lastActionTimestamp = block.timestamp;
+        loan.lastActionTimestamp = loan.lastActionTimestamp + 1;
+
+        if (loan.numberOfEpochsPaid == loan.totalNumberOfEpochsToPay) {
+            emit LoanPaidBack(_loanId);
+        }
+    }
+
 
 
     // PRIVATE FUNCTIONS
 
-    function _computeBorrowerInterestRateInCentile(uint8 _riskLevel, uint16 _durationInDays) private view returns (uint16) {
+    function _computeBorrowerInterestRateInCentile(uint8 _creditScore, uint16 _durationInDays) private view returns (uint16) {
         // TODO: this formula returns values way too high! Keep the same inputs, but tweak it to return more reasonable rates.
-        return RISK_FREE_RATE_IN_CENTILE + ((RISK_COEFFICIENT_IN_CENTILE * _riskLevel) * (DURATION_COEFFICIENT_IN_CENTILE * _durationInDays));
+        return RISK_FREE_RATE_IN_CENTILE + ((RISK_COEFFICIENT_IN_CENTILE * _creditScoreToRiskLevel(_creditScore)) * (DURATION_COEFFICIENT_IN_CENTILE * _durationInDays));
     }
 
     function _computeLenderInterestRateInCentile(uint8 _riskLevel, uint16 _durationInDays) private view returns (uint16) {
-        uint16 borrowerRateInCentile = _computeBorrowerInterestRateInCentile(_riskLevel, _durationInDays);
+        uint16 borrowerRateInCentile = _computeBorrowerInterestRateInCentile(_riskLevelToCreditScore(_riskLevel), _durationInDays);
 
         return borrowerRateInCentile * (1 - PROTOCOL_FEE_IN_CENTILE);
     }
 
+    function _creditScoreToRiskLevel(uint8 _creditScore) private pure returns (uint8) {
+        return (100 - _creditScore);
+    }
+
+    function _riskLevelToCreditScore(uint8 _riskLevel) private pure returns (uint8) {
+        return (100 - _riskLevel);
+    }
 }
