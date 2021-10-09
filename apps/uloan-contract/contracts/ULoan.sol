@@ -73,7 +73,7 @@ contract ULoan {
         string closeReason;  // reason why the loan is Closed (to be sourced from an enum)
     }
     uint256 lastLoanId;
-    mapping(uint256 => Loan) loans;
+    mapping(uint256 => Loan) public loans;
 
     mapping(address => uint8) creditScores;
     mapping(address => uint256) feesEntitled;  // loan fee go to the creator of the match between a loan and the lender (or set of lenders)
@@ -85,6 +85,7 @@ contract ULoan {
     event LoanRequested(uint256 loanId, uint256 amount, uint8 borrowerCreditScore, uint16 durationInDays);
     event LoanWithdrawn(uint256 loanId);
     event LoanPaidBack(uint256 loanId);
+    event LoanMatchedWithCapital(uint256 loanId);  // listeners should query the protocol to get the detail of the capital providers attached to the loan
 
 
     // CONSTRUCTOR
@@ -261,13 +262,66 @@ contract ULoan {
         require(success, "The transfer of funds failed, do you have enough funds?");
 
         loan.lastActionTimestamp = block.timestamp;
-        loan.lastActionTimestamp = loan.lastActionTimestamp + 1;
+        loan.numberOfEpochsPaid = loan.numberOfEpochsPaid + 1;
 
         if (loan.numberOfEpochsPaid == loan.totalNumberOfEpochsToPay) {
             emit LoanPaidBack(_loanId);
         }
     }
 
+    function matchLoanWithCapital(
+        uint[] calldata _capitalProviderIds,
+        uint[] calldata _capitalProviderAmounts,
+        uint _loanId
+    ) external {
+        Loan storage loan = loans[_loanId];
+
+        // Initial verications
+        require(_capitalProviderIds.length == _capitalProviderAmounts.length, "The length of the provided arguments doesn't match");
+
+        uint256 sumOfAmounts;
+        for (uint256 i = 0; i < _capitalProviderAmounts.length; i++) {
+            sumOfAmounts += _capitalProviderAmounts[i];
+        }
+        require(loan.amountRequested == sumOfAmounts, "The sum of the amounts provided doesn't match the amount requested for this loan.");
+
+        for (uint256 i = 0; i <= _capitalProviderIds.length; i++) {
+            require(_capitalProviderIds[i] <= lastCapitalProviderId, "This capital provider doesn't exist");
+            CapitalProvider storage loanCapitalProvider = capitalProviders[_capitalProviderIds[i]];
+
+            // Check lender has enough capital, risk tolerance and duration
+            require(loanCapitalProvider.amountAvailable >= _capitalProviderAmounts[i], "One or more of the capital providers doesn't have enough capital to fund the loan in the proportion proposed");
+            require(loanCapitalProvider.minRiskLevel >= _creditScoreToRiskLevel(loan.creditScore), "The credit score of the loan's borrower is too high for the lender (loan not aggressive enough)");
+            require(loanCapitalProvider.maxRiskLevel <= _creditScoreToRiskLevel(loan.creditScore), "The credit score of the loan's borrower is too low for the lender (loan too risk)");
+            require(loanCapitalProvider.lockUpPeriodInDays >= loan.durationInDays, "One or more of the capital providers lock up period isn't high enough to match that of the loan");
+
+            // If the checks pass, reflect the matching of the capital with the loan in the capitalProvider and the loan
+            uint256 amountToReceiveBack = _capitalProviderAmounts[i] * (1 + _computeLenderInterestRateInCentile(_creditScoreToRiskLevel(loan.creditScore), loan.durationInDays));
+
+            // Adjust the capital provider side of the matching
+            loanCapitalProvider.fundedLoans.push(FundedLoan({
+                loanId: _loanId,
+                amountContributed: _capitalProviderAmounts[i],
+                amountToReceiveBack: amountToReceiveBack,
+                amountPaidBack: 0
+            }));
+
+            loanCapitalProvider.amountAvailable -= _capitalProviderAmounts[i];
+
+            // Adjust the loan side of the matching
+            loan.lenders.push(Lender({
+                lenderId: _capitalProviderIds[i],
+                amountContributed: _capitalProviderAmounts[i],
+                amountToReceiveBack: amountToReceiveBack,
+                amountPaidBack: 0
+            }));
+        }
+
+        loan.state = LoanState.Funded;
+        loan.lastActionTimestamp = block.timestamp;
+
+        emit LoanMatchedWithCapital(_loanId);
+    }
 
 
     // PRIVATE FUNCTIONS
