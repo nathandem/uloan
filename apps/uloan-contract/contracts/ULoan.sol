@@ -33,12 +33,6 @@ contract ULoan {
 
     // Lending and loan specific state
 
-    struct FundedLoan {
-        uint256 loanId;  // the key to find the loan struct in `loans`
-        uint256 amountContributed;  // constant value, won't change over time
-        uint256 amountToReceiveBack;  // constant value (amountContributed + expected interests), computed when capital is matched to the loan
-        uint256 amountPaidBack;  // variable, grows as the borrower pays back the loans+interests
-    }
     struct CapitalProvider {
         address lender;
         uint8 minRiskLevel;  // the least risky value is MIN_RISK_LEVEL
@@ -46,7 +40,7 @@ contract ULoan {
         uint16 lockUpPeriodInDays;  // constant used for loan matching, giving the max number of days that the funds can be locked in a loan
         uint256 amountProvided;  // constant value, this value won't ever change. New deposits by existing lenders leads to the creation of new CapitalProvider structs
         uint256 amountAvailable;  // at the beginning, amountAvailable == amountProvided, but it will change over time because 1) funds will be lent, 2) interests will be earnt, 3) lender will recoup some or all of this amount
-        FundedLoan[] fundedLoans;
+        uint256[] fundedLoanIds;
     }
     uint256 lastCapitalProviderId;
     mapping(uint256 => CapitalProvider) capitalProviders;
@@ -54,7 +48,7 @@ contract ULoan {
     struct Lender {
         uint256 lenderId;  // the key to find the `CapitalProvider` struct in `capitalProviders`
         uint256 amountContributed;  // constant, won't change over time
-        uint256 amountToReceiveBack;  // constant (amountContributed + expected interests), computed when capital is matched to the loan
+        uint256 totalAmountToGetBack;  // constant (amountContributed + expected interests), computed when capital is matched to the loan
         uint256 amountPaidBack;  // variable, grows as the borrower pays back the loans+interests
     }
     enum LoanState { Requested, Funded, BeingPaidBack, PayedBack, Closed }
@@ -264,7 +258,17 @@ contract ULoan {
         loan.lastActionTimestamp = block.timestamp;
         loan.numberOfEpochsPaid = loan.numberOfEpochsPaid + 1;
 
+        for (uint256 i = 0; i <= loan.lenders.length; i++) {
+            Lender storage loanLender = loan.lenders[i];
+            uint256 amountToAddToLender = loanLender.totalAmountToGetBack / loan.totalNumberOfEpochsToPay;
+            loanLender.amountPaidBack += amountToAddToLender;
+
+            CapitalProvider storage loanCapitalProvider = capitalProviders[loanLender.lenderId];
+            loanCapitalProvider.amountAvailable += amountToAddToLender;
+        }
+
         if (loan.numberOfEpochsPaid == loan.totalNumberOfEpochsToPay) {
+            loan.state = LoanState.PayedBack;
             emit LoanPaidBack(_loanId);
         }
     }
@@ -296,23 +300,17 @@ contract ULoan {
             require(loanCapitalProvider.lockUpPeriodInDays >= loan.durationInDays, "One or more of the capital providers lock up period isn't high enough to match that of the loan");
 
             // If the checks pass, reflect the matching of the capital with the loan in the capitalProvider and the loan
-            uint256 amountToReceiveBack = _capitalProviderAmounts[i] * (1 + _computeLenderInterestRateInCentile(_creditScoreToRiskLevel(loan.creditScore), loan.durationInDays));
+            uint256 totalAmountToGetBack = _capitalProviderAmounts[i] * (1 + _computeLenderInterestRateInCentile(_creditScoreToRiskLevel(loan.creditScore), loan.durationInDays));
 
             // Adjust the capital provider side of the matching
-            loanCapitalProvider.fundedLoans.push(FundedLoan({
-                loanId: _loanId,
-                amountContributed: _capitalProviderAmounts[i],
-                amountToReceiveBack: amountToReceiveBack,
-                amountPaidBack: 0
-            }));
-
+            loanCapitalProvider.fundedLoanIds.push(_loanId);
             loanCapitalProvider.amountAvailable -= _capitalProviderAmounts[i];
 
             // Adjust the loan side of the matching
             loan.lenders.push(Lender({
                 lenderId: _capitalProviderIds[i],
                 amountContributed: _capitalProviderAmounts[i],
-                amountToReceiveBack: amountToReceiveBack,
+                totalAmountToGetBack: totalAmountToGetBack,
                 amountPaidBack: 0
             }));
         }
