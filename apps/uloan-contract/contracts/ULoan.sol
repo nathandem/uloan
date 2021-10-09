@@ -3,15 +3,18 @@ pragma solidity ^0.8.0;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { SafeMath } from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 
 contract ULoan is Ownable {
+
+    using SafeMath for uint256;
 
     // STATE
 
     // Protocol wide parameters
 
-    IERC20 public stablecoin;  // TODO: allow admin to change this, in case of emergency with said stablecoin
+    IERC20 public stablecoin;
 
     uint16 public ULOAN_EPOCH_IN_DAYS = 7;  // arbitrary value to be debated
 
@@ -24,14 +27,13 @@ contract ULoan is Ownable {
     uint256 public MIN_LOAN_DURATION_IN_DAYS = ULOAN_EPOCH_IN_DAYS;  // arbitrary value to be debated
     uint256 public MAX_LOAN_DURATION_IN_DAYS = ULOAN_EPOCH_IN_DAYS * 52;  // arbitrary value to be debated
 
-    // Note: *_IN_CENTILE refers to an internal representation of fixed-point numbers, with a precision to a hundredth.
-    // For example, 100 means 1, 40 means 0.40
-    uint16 public RISK_FREE_RATE_IN_CENTILE = 100;
-    uint16 public RISK_COEFFICIENT_IN_CENTILE = 30;  // arbitrary value to be debated
-    uint16 public DURATION_COEFFICIENT_IN_CENTILE = 30;  // arbitrary value to be debated
-    uint16 public FEE_TO_MATCH_INITIATOR_IN_CENTILE = 200;  // arbitrary value to be debated
-    uint16 public FEE_TO_PROTOCOL_OWNER_IN_CENTILE = 100;  // arbitrary value to be debated
-    uint16 public FEE_IN_CENTILE = FEE_TO_MATCH_INITIATOR_IN_CENTILE + FEE_TO_PROTOCOL_OWNER_IN_CENTILE;
+    // Following values are in basis points. For example, 100 equals 1, 40 equals 0.40
+    uint16 public RISK_FREE_RATE_BP = 100;
+    uint16 public RISK_COEFFICIENT_BP = 30;  // arbitrary value to be debated
+    uint16 public DURATION_COEFFICIENT_BP = 30;  // arbitrary value to be debated
+    uint16 public FEE_TO_MATCH_INITIATOR_BP = 200;  // arbitrary value to be debated
+    uint16 public FEE_TO_PROTOCOL_OWNER_BP = 100;  // arbitrary value to be debated
+    uint16 public FEE_BP = FEE_TO_MATCH_INITIATOR_BP + FEE_TO_PROTOCOL_OWNER_BP;
 
 
     // Lending and loan specific state
@@ -119,10 +121,10 @@ contract ULoan is Ownable {
         require(_lockUpPeriodInDays >= MIN_LOCKUP_PERIOD_IN_DAYS, "The lock-up period can't be shorter than MIN_LOCKUP_PERIOD_IN_DAYS");
         require(_amount >= MIN_DEPOSIT_AMOUNT, "The amount can't be lower than MIN_DEPOSIT_AMOUNT");
 
-        uint16 minInterestRateInCentile = _computeLenderInterestRateInCentile(_minRiskLevel, _lockUpPeriodInDays);
-        uint16 maxInterestRateInCentile = _computeLenderInterestRateInCentile(_maxRiskLevel, _lockUpPeriodInDays);
+        uint16 minInterestRateInBasisPoint = _computeLenderInterestRateInBasisPoint(_minRiskLevel, _lockUpPeriodInDays);
+        uint16 maxInterestRateInBasisPoint = _computeLenderInterestRateInBasisPoint(_maxRiskLevel, _lockUpPeriodInDays);
 
-        return (minInterestRateInCentile, maxInterestRateInCentile);
+        return (minInterestRateInBasisPoint, maxInterestRateInBasisPoint);
     }
 
     /*
@@ -189,7 +191,7 @@ contract ULoan is Ownable {
         require(_durationInDays % ULOAN_EPOCH_IN_DAYS == 0, "The loan duration (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
         require(_amount >= MIN_LOAN_AMOUNT, "The amount can't be lower than MIN_LOAN_AMOUNT");
 
-        return _computeBorrowerInterestRateInCentile(_creditScore, _durationInDays);
+        return _computeBorrowerInterestRateInBasisPoint(_creditScore, _durationInDays);
     }
 
     /*
@@ -204,7 +206,7 @@ contract ULoan is Ownable {
         require(_durationInDays % ULOAN_EPOCH_IN_DAYS == 0, "The loan duration (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
         require(_amount >= MIN_LOAN_AMOUNT, "The amount can't be lower than MIN_LOAN_AMOUNT");
 
-        uint256 amountToRepay = _amount * (1 + _computeBorrowerInterestRateInCentile(borrowerCreditScore, _durationInDays));
+        uint256 amountToRepay = _amount * (1 + _computeBorrowerInterestRateInBasisPoint(borrowerCreditScore, _durationInDays));
         uint16 totalNumberOfEpochsToPay = _durationInDays / ULOAN_EPOCH_IN_DAYS;
 
         lastLoanId++;
@@ -273,8 +275,8 @@ contract ULoan is Ownable {
             loan.state = LoanState.PayedBack;
 
             // now that the loan succeeded, allow match maker and owner to take their fees
-            matchMakerFees[loan.matchMaker] += loan.amountRequested * FEE_TO_MATCH_INITIATOR_IN_CENTILE;
-            ownerFees += loan.amountRequested * FEE_TO_PROTOCOL_OWNER_IN_CENTILE;
+            matchMakerFees[loan.matchMaker] += _percentageOf(loan.amountRequested, FEE_TO_MATCH_INITIATOR_BP);
+            ownerFees += _percentageOf(loan.amountRequested, FEE_TO_PROTOCOL_OWNER_BP);
 
             emit LoanPaidBack(_loanId);
         }
@@ -317,7 +319,7 @@ contract ULoan is Ownable {
             require(loanCapitalProvider.lockUpPeriodInDays >= loan.durationInDays, "One or more of the capital providers lock up period isn't high enough to match that of the loan");
 
             // If the checks pass, reflect the matching of the capital with the loan in the capitalProvider and the loan
-            uint256 totalAmountToGetBack = _capitalProviderAmounts[i] * (1 + _computeLenderInterestRateInCentile(_creditScoreToRiskLevel(loan.creditScore), loan.durationInDays));
+            uint256 totalAmountToGetBack = _capitalProviderAmounts[i] * (1 + _computeLenderInterestRateInBasisPoint(_creditScoreToRiskLevel(loan.creditScore), loan.durationInDays));
 
             // Adjust the capital provider side of the matching
             loanCapitalProvider.fundedLoanIds.push(_loanId);
@@ -360,19 +362,19 @@ contract ULoan is Ownable {
 
     // PRIVATE FUNCTIONS
 
-    function _computeBorrowerInterestRateInCentile(uint8 _creditScore, uint16 _durationInDays) private view returns (uint16) {
+    function _computeBorrowerInterestRateInBasisPoint(uint8 _creditScore, uint16 _durationInDays) private view returns (uint16) {
         // TODO: this formula returns values way too high! Keep the same inputs, but tweak it to return more reasonable rates.
         return (
-            RISK_FREE_RATE_IN_CENTILE
-            + ((RISK_COEFFICIENT_IN_CENTILE * _creditScoreToRiskLevel(_creditScore)) * (DURATION_COEFFICIENT_IN_CENTILE * _durationInDays))
-            + FEE_IN_CENTILE
+            RISK_FREE_RATE_BP
+            + ((RISK_COEFFICIENT_BP * _creditScoreToRiskLevel(_creditScore)) * (DURATION_COEFFICIENT_BP * _durationInDays))
+            + FEE_BP
         );
     }
 
-    function _computeLenderInterestRateInCentile(uint8 _riskLevel, uint16 _durationInDays) private view returns (uint16) {
-        uint16 borrowerRateInCentile = _computeBorrowerInterestRateInCentile(_riskLevelToCreditScore(_riskLevel), _durationInDays);
+    function _computeLenderInterestRateInBasisPoint(uint8 _riskLevel, uint16 _durationInDays) private view returns (uint16) {
+        uint16 borrowerRateInBasisPoint = _computeBorrowerInterestRateInBasisPoint(_riskLevelToCreditScore(_riskLevel), _durationInDays);
 
-        return borrowerRateInCentile * (1 - FEE_IN_CENTILE);
+        return borrowerRateInBasisPoint * (1 - FEE_BP);
     }
 
     function _creditScoreToRiskLevel(uint8 _creditScore) private pure returns (uint8) {
@@ -381,5 +383,12 @@ contract ULoan is Ownable {
 
     function _riskLevelToCreditScore(uint8 _riskLevel) private pure returns (uint8) {
         return (100 - _riskLevel);
+    }
+
+    /*
+     * To be used with large numbers.
+     */
+    function _percentageOf(uint256 x, uint256 basisPoints) internal pure returns (uint256) {
+        return x.mul(basisPoints).div(10000);
     }
 }
