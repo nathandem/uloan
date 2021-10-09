@@ -2,9 +2,10 @@
 pragma solidity ^0.8.0;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 
-contract ULoan {
+contract ULoan is Ownable {
 
     // STATE
 
@@ -28,7 +29,9 @@ contract ULoan {
     uint16 public RISK_FREE_RATE_IN_CENTILE = 100;
     uint16 public RISK_COEFFICIENT_IN_CENTILE = 30;  // arbitrary value to be debated
     uint16 public DURATION_COEFFICIENT_IN_CENTILE = 30;  // arbitrary value to be debated
-    uint16 public PROTOCOL_FEE_IN_CENTILE = 300;  // arbitrary value to be debated
+    uint16 public FEE_TO_MATCH_INITIATOR_IN_CENTILE = 200;  // arbitrary value to be debated
+    uint16 public FEE_TO_PROTOCOL_OWNER_IN_CENTILE = 100;  // arbitrary value to be debated
+    uint16 public FEE_IN_CENTILE = FEE_TO_MATCH_INITIATOR_IN_CENTILE + FEE_TO_PROTOCOL_OWNER_IN_CENTILE;
 
 
     // Lending and loan specific state
@@ -48,7 +51,7 @@ contract ULoan {
     struct Lender {
         uint256 lenderId;  // the key to find the `CapitalProvider` struct in `capitalProviders`
         uint256 amountContributed;  // constant, won't change over time
-        uint256 totalAmountToGetBack;  // constant (amountContributed + expected interests), computed when capital is matched to the loan
+        uint256 totalAmountToGetBack;  // (amountContributed + interests) - (matcher fee + protocol fee)
         uint256 amountPaidBack;  // variable, grows as the borrower pays back the loans+interests
     }
     enum LoanState { Requested, Funded, BeingPaidBack, PayedBack, Closed }
@@ -58,10 +61,11 @@ contract ULoan {
         uint256 lastActionTimestamp;  // versatile variable storing the timestamp of the block at which the last action took place. An action occurs everytime the loan changes its state, when it is Requested, Funded, BeingPaidBack (in this state, refer to `numberOfEpochsPaid` to get a sense of the progress in repayment of the loan - and of potential delay) and PayedBack.
         uint16 durationInDays;
         uint256 amountRequested;
-        uint256 amountToRepay;  // sums amountRequested + all the interest payments (i.e. amountRequested * (APY * durationInDays / 365))
+        uint256 amountToRepay;  // amountRequested + interests. Include the match maker and protocol fees
         uint16 totalNumberOfEpochsToPay;  // fixed value
         uint16 numberOfEpochsPaid;  // increased by one every payment
         uint256 amountToRepayEveryEpoch;
+        address matchMaker;  // address of initiator of the match between the loan and one/many capitalProviders
         Lender[] lenders;
         LoanState state;
         string closeReason;  // reason why the loan is Closed (to be sourced from an enum)
@@ -70,7 +74,8 @@ contract ULoan {
     mapping(uint256 => Loan) public loans;
 
     mapping(address => uint8) creditScores;
-    mapping(address => uint256) feesEntitled;  // loan fee go to the creator of the match between a loan and the lender (or set of lenders)
+    mapping(address => uint256) matchMakerFees;
+    uint256 ownerFees;
 
 
     // EVENTS
@@ -269,10 +274,24 @@ contract ULoan {
 
         if (loan.numberOfEpochsPaid == loan.totalNumberOfEpochsToPay) {
             loan.state = LoanState.PayedBack;
+
+            // now that the loan succeeded, allow match maker and owner to take their fees
+            matchMakerFees[loan.matchMaker] += loan.amountRequested * FEE_TO_MATCH_INITIATOR_IN_CENTILE;
+            ownerFees += loan.amountRequested * FEE_TO_PROTOCOL_OWNER_IN_CENTILE;
+
             emit LoanPaidBack(_loanId);
         }
     }
 
+    /*
+     * Function to associate loans with capital providers.
+     *
+     * 3 relevant criteria to match capital provider with loan are: amount, risk tolerance and lock-up period.
+     *
+     * The matching isn't perfomed on chain to avoid expensive computation.
+     * However, in order to leave the protocol open and decentralized, anyone can call this function with
+     * a valid match and get a fee/percentage of the interest of the loan.
+     */
     function matchLoanWithCapital(
         uint[] calldata _capitalProviderIds,
         uint[] calldata _capitalProviderAmounts,
@@ -281,6 +300,7 @@ contract ULoan {
         Loan storage loan = loans[_loanId];
 
         // Initial verications
+        require(loan.state == LoanState.Requested, "Only requested loans can be matched");
         require(_capitalProviderIds.length == _capitalProviderAmounts.length, "The length of the provided arguments doesn't match");
 
         uint256 sumOfAmounts;
@@ -317,8 +337,27 @@ contract ULoan {
 
         loan.state = LoanState.Funded;
         loan.lastActionTimestamp = block.timestamp;
+        loan.matchMaker = msg.sender;
 
         emit LoanMatchedWithCapital(_loanId);
+    }
+
+    /*
+     * Function to be called by loan match makers/initiators to get their share of the loan fees.
+     */
+    function getLoansMatchingFees() public {
+        require(matchMakerFees[msg.sender] != 0, "Are you sure you matched loans which are now paid back?");
+
+        bool success = stablecoin.transfer(msg.sender, matchMakerFees[msg.sender]);
+        require(success, "The transfer of funds from ULoan to your account failed");
+    }
+
+    /*
+     * Function to be called by protocol owner to get his/her share of the loan fees.
+     */
+    function getProtocolOwnerFees() public onlyOwner {
+        bool success = stablecoin.transfer(msg.sender, ownerFees);
+        require(success, "The transfer of funds from ULoan to your account failed");
     }
 
 
@@ -326,13 +365,17 @@ contract ULoan {
 
     function _computeBorrowerInterestRateInCentile(uint8 _creditScore, uint16 _durationInDays) private view returns (uint16) {
         // TODO: this formula returns values way too high! Keep the same inputs, but tweak it to return more reasonable rates.
-        return RISK_FREE_RATE_IN_CENTILE + ((RISK_COEFFICIENT_IN_CENTILE * _creditScoreToRiskLevel(_creditScore)) * (DURATION_COEFFICIENT_IN_CENTILE * _durationInDays));
+        return (
+            RISK_FREE_RATE_IN_CENTILE
+            + ((RISK_COEFFICIENT_IN_CENTILE * _creditScoreToRiskLevel(_creditScore)) * (DURATION_COEFFICIENT_IN_CENTILE * _durationInDays))
+            + FEE_IN_CENTILE
+        );
     }
 
     function _computeLenderInterestRateInCentile(uint8 _riskLevel, uint16 _durationInDays) private view returns (uint16) {
         uint16 borrowerRateInCentile = _computeBorrowerInterestRateInCentile(_riskLevelToCreditScore(_riskLevel), _durationInDays);
 
-        return borrowerRateInCentile * (1 - PROTOCOL_FEE_IN_CENTILE);
+        return borrowerRateInCentile * (1 - FEE_IN_CENTILE);
     }
 
     function _creditScoreToRiskLevel(uint8 _creditScore) private pure returns (uint8) {
