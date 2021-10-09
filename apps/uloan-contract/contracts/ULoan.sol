@@ -14,13 +14,15 @@ contract ULoan {
 
     uint256 public MIN_DEPOSIT_AMOUNT = 10;  // arbitrary value to be debated
     uint256 public MIN_LOCKUP_PERIOD_IN_DAYS = 7;  // arbitrary value to be debated
+    uint256 public MIN_RISK_LEVEL = 1;
+    uint256 public MAX_RISK_LEVEL = 100;
 
     // Note: *_IN_CENTILE refers to an internal representation of fixed-point numbers, with a precision to a hundredth.
     // For example, 100 means 1, 40 means 0.40
     uint16 public RISK_FREE_RATE_IN_CENTILE = 100;
     uint16 public RISK_COEFFICIENT_IN_CENTILE = 30;  // arbitrary value to be debated
     uint16 public DURATION_COEFFICIENT_IN_CENTILE = 30;  // arbitrary value to be debated
-    uint16 public PROTOCOL_FEE_IN_CENTILE = 10;  // arbitrary value to be debated
+    uint16 public PROTOCOL_FEE_IN_CENTILE = 300;  // arbitrary value to be debated
 
 
     // Lending and loan specific state
@@ -33,8 +35,8 @@ contract ULoan {
     }
     struct CapitalProvider {
         address lender;
-        uint8 minRiskLevel;  // the least risky value is 1
-        uint8 maxRiskLevel;  // the most risky value is 100
+        uint8 minRiskLevel;  // the least risky value is MIN_RISK_LEVEL
+        uint8 maxRiskLevel;  // the most risky value is MAX_RISK_LEVEL
         uint16 lockUpPeriodInDays;  // constant used for loan matching, giving the max number of days that the funds can be locked in a loan
         uint256 amountProvided;  // constant value, this value won't ever change. New deposits by existing lenders leads to the creation of new CapitalProvider structs
         uint256 amountAvailable;  // at the beginning, amountAvailable == amountProvided, but it will change over time because 1) funds will be lent, 2) interests will be earnt, 3) lender will recoup some or all of this amount
@@ -82,11 +84,13 @@ contract ULoan {
     // PUBLIC FUNCTIONS
 
     /*
-     * Runs the interest rate formula for borrower with the incoming parameters, once with the min risk level
+     * Runs the interest rate formula for lender with the incoming parameters, once with the min risk level
      * and one with the max risk level the lender is willing to take. This gives the lender a range of what he/she
      * can expect from the loan.
      *
-     * These return percentages assume that the funds are lent to a loan (or multiple loans) matching exactly
+     * ULoan renumerates lenders not for the risk level of the borrowers they lend to but also for the duration
+     * during which they lend. As such, the estimated interests vary based on the duration.
+     * The return percentages assume that the funds are lent to a loan (or multiple loans) matching exactly
      * the lock-up period specified by the lender. We should let the user know that the return will be lower if his capital
      * is matched with a shorter loan. Yet, we should add that, if that's the case, he can leave his capital on the protocol
      * to have his funds roll to another loan.
@@ -98,9 +102,9 @@ contract ULoan {
         uint16 _lockUpPeriodInDays
     ) public view returns (uint256, uint256) {
         require(_maxRiskLevel >= _minRiskLevel, "The max risk level can't be smaller than the min risk level");
-        require(_minRiskLevel >= 1, "The min risk level can't be smaller than 1");
-        require(_maxRiskLevel <= 100, "The max risk level can't be above 100");
-        require(_lockUpPeriodInDays >= 1, "The lock-up period can't be shorter than one day");
+        require(_minRiskLevel >= MIN_RISK_LEVEL, "The min risk level can't be smaller than MIN_RISK_LEVEL");
+        require(_maxRiskLevel <= MAX_RISK_LEVEL, "The max risk level can't be above MAX_RISK_LEVEL");
+        require(_lockUpPeriodInDays >= MIN_LOCKUP_PERIOD_IN_DAYS, "The lock-up period can't be shorter than MIN_LOCKUP_PERIOD_IN_DAYS");
         require(_amount >= MIN_DEPOSIT_AMOUNT, "The amount can't be lower than MIN_DEPOSIT_AMOUNT");
 
         uint16 minInterestRateInCentile = _computeLenderInterestRateInCentile(_minRiskLevel, _lockUpPeriodInDays);
@@ -114,7 +118,7 @@ contract ULoan {
 
     /*
      * Transfer ERC20 stablecoins from lender to contract's address/balance, create an entry for the lender accordingly.
-     * Function assumes that the amount has been approved by the lender on the ERC20 contract.
+     * Function assumes that the amount has been previously approved by the lender on the ERC20 contract.
      * Emit event that any service looking to perform matching for the protocol can listen to.
      */
     function depositCapital(
@@ -124,8 +128,8 @@ contract ULoan {
         uint16 _lockUpPeriodInDays
     ) public {
         require(_maxRiskLevel >= _minRiskLevel, "The max risk level can't be smaller than the min risk level");
-        require(_minRiskLevel >= 1, "The min risk level can't be smaller than 1");
-        require(_maxRiskLevel <= 100, "The max risk level can't be above 100");
+        require(_minRiskLevel >= MIN_RISK_LEVEL, "The min risk level can't be smaller than MIN_RISK_LEVEL");
+        require(_maxRiskLevel <= MAX_RISK_LEVEL, "The max risk level can't be above MAX_RISK_LEVEL");
         require(_lockUpPeriodInDays >= MIN_LOCKUP_PERIOD_IN_DAYS, "The lock-up period can't be shorter than MIN_LOCKUP_PERIOD_IN_DAYS");
         require(_amount >= MIN_DEPOSIT_AMOUNT, "The amount can't be lower than MIN_DEPOSIT_AMOUNT");
 
