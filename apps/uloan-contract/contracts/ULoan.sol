@@ -28,9 +28,9 @@ contract ULoan is Ownable {
     uint256 public MAX_LOAN_DURATION_IN_DAYS = ULOAN_EPOCH_IN_DAYS * 52;  // arbitrary value to be debated
 
     // Following values are in basis points. For example, 100 equals 1, 40 equals 0.40
-    uint16 public RISK_FREE_RATE_BP = 100;
-    uint16 public RISK_COEFFICIENT_BP = 30;  // arbitrary value to be debated
-    uint16 public DURATION_COEFFICIENT_BP = 30;  // arbitrary value to be debated
+    uint16 public RISK_FREE_RATE_BP = 100;  // value to be fetch from a "risk-free" protocol like Uniswap
+    uint16 public RISK_COEFFICIENT_BP = 20;  // arbitrary value to be debated
+    uint16 public EPOCH_DURATION_COEFFICIENT_BP = 1;  // arbitrary value to be debated
     uint16 public FEE_TO_MATCH_INITIATOR_BP = 200;  // arbitrary value to be debated
     uint16 public FEE_TO_PROTOCOL_OWNER_BP = 100;  // arbitrary value to be debated
     uint16 public FEE_BP = FEE_TO_MATCH_INITIATOR_BP + FEE_TO_PROTOCOL_OWNER_BP;
@@ -109,7 +109,7 @@ contract ULoan is Ownable {
      * is matched with a shorter loan. Yet, we should add that, if that's the case, he can leave his capital on the protocol
      * to have his funds roll to another loan.
      */
-    function getReturnEstimate(
+    function getReturnEstimateInBasisPoint(
         uint256 _amount,
         uint8 _minRiskLevel,
         uint8 _maxRiskLevel,
@@ -119,10 +119,12 @@ contract ULoan is Ownable {
         require(_minRiskLevel >= MIN_RISK_LEVEL, "The min risk level can't be smaller than MIN_RISK_LEVEL");
         require(_maxRiskLevel <= MAX_RISK_LEVEL, "The max risk level can't be above MAX_RISK_LEVEL");
         require(_lockUpPeriodInDays >= MIN_LOCKUP_PERIOD_IN_DAYS, "The lock-up period can't be shorter than MIN_LOCKUP_PERIOD_IN_DAYS");
+        require(_lockUpPeriodInDays % ULOAN_EPOCH_IN_DAYS == 0, "The lock-up period (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
         require(_amount >= MIN_DEPOSIT_AMOUNT, "The amount can't be lower than MIN_DEPOSIT_AMOUNT");
 
-        uint16 minInterestRateInBasisPoint = _computeLenderInterestRateInBasisPoint(_minRiskLevel, _lockUpPeriodInDays);
-        uint16 maxInterestRateInBasisPoint = _computeLenderInterestRateInBasisPoint(_maxRiskLevel, _lockUpPeriodInDays);
+        uint16 durationInEpochs = _lockUpPeriodInDays / ULOAN_EPOCH_IN_DAYS;
+        uint16 minInterestRateInBasisPoint = _computeLenderInterestRateInBasisPoint(_minRiskLevel, durationInEpochs);
+        uint16 maxInterestRateInBasisPoint = _computeLenderInterestRateInBasisPoint(_maxRiskLevel, durationInEpochs);
 
         return (minInterestRateInBasisPoint, maxInterestRateInBasisPoint);
     }
@@ -142,6 +144,7 @@ contract ULoan is Ownable {
         require(_minRiskLevel >= MIN_RISK_LEVEL, "The min risk level can't be smaller than MIN_RISK_LEVEL");
         require(_maxRiskLevel <= MAX_RISK_LEVEL, "The max risk level can't be above MAX_RISK_LEVEL");
         require(_lockUpPeriodInDays >= MIN_LOCKUP_PERIOD_IN_DAYS, "The lock-up period can't be shorter than MIN_LOCKUP_PERIOD_IN_DAYS");
+        require(_lockUpPeriodInDays % ULOAN_EPOCH_IN_DAYS == 0, "The lock-up period (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
         require(_amount >= MIN_DEPOSIT_AMOUNT, "The amount can't be lower than MIN_DEPOSIT_AMOUNT");
 
         bool success = stablecoin.transferFrom(msg.sender, address(this), _amount);
@@ -185,13 +188,13 @@ contract ULoan is Ownable {
      *
      * Important note: the amount is return in centile.
      */
-    function getInterestEstimate(uint256 _amount, uint8 _creditScore, uint16 _durationInDays) public view returns (uint16) {
+    function getInterestEstimateInBasisPoint(uint256 _amount, uint8 _creditScore, uint16 _durationInDays) public view returns (uint16) {
         require(_durationInDays >= MIN_LOAN_DURATION_IN_DAYS, "The lock-up period can't be shorter than MIN_LOAN_DURATION_IN_DAYS");
         require(_durationInDays <= MAX_LOAN_DURATION_IN_DAYS, "The lock-up period can't be longer than MAX_LOAN_DURATION_IN_DAYS");
         require(_durationInDays % ULOAN_EPOCH_IN_DAYS == 0, "The loan duration (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
         require(_amount >= MIN_LOAN_AMOUNT, "The amount can't be lower than MIN_LOAN_AMOUNT");
 
-        return _computeBorrowerInterestRateInBasisPoint(_creditScore, _durationInDays);
+        return _computeBorrowerInterestRateInBasisPoint(_creditScore, (_durationInDays / ULOAN_EPOCH_IN_DAYS));
     }
 
     /*
@@ -206,7 +209,8 @@ contract ULoan is Ownable {
         require(_durationInDays % ULOAN_EPOCH_IN_DAYS == 0, "The loan duration (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
         require(_amount >= MIN_LOAN_AMOUNT, "The amount can't be lower than MIN_LOAN_AMOUNT");
 
-        uint256 amountToRepay = _amount * (1 + _computeBorrowerInterestRateInBasisPoint(borrowerCreditScore, _durationInDays));
+        uint16 durationInEpochs = _durationInDays / ULOAN_EPOCH_IN_DAYS;
+        uint256 amountToRepay = _amount + _percentageOf(_amount, _computeBorrowerInterestRateInBasisPoint(borrowerCreditScore, durationInEpochs));
         uint16 totalNumberOfEpochsToPay = _durationInDays / ULOAN_EPOCH_IN_DAYS;
 
         lastLoanId++;
@@ -319,7 +323,12 @@ contract ULoan is Ownable {
             require(loanCapitalProvider.lockUpPeriodInDays >= loan.durationInDays, "One or more of the capital providers lock up period isn't high enough to match that of the loan");
 
             // If the checks pass, reflect the matching of the capital with the loan in the capitalProvider and the loan
-            uint256 totalAmountToGetBack = _capitalProviderAmounts[i] * (1 + _computeLenderInterestRateInBasisPoint(_creditScoreToRiskLevel(loan.creditScore), loan.durationInDays));
+            uint16 durationInEpochs = loan.durationInDays / ULOAN_EPOCH_IN_DAYS;
+            uint16 lenderInterestRateInBasisPoint = _computeLenderInterestRateInBasisPoint(_creditScoreToRiskLevel(loan.creditScore), durationInEpochs);
+            uint256 totalAmountToGetBack = (
+                _capitalProviderAmounts[i]
+                + _percentageOf(_capitalProviderAmounts[i], lenderInterestRateInBasisPoint)
+            );
 
             // Adjust the capital provider side of the matching
             loanCapitalProvider.fundedLoanIds.push(_loanId);
@@ -362,17 +371,17 @@ contract ULoan is Ownable {
 
     // PRIVATE FUNCTIONS
 
-    function _computeBorrowerInterestRateInBasisPoint(uint8 _creditScore, uint16 _durationInDays) private view returns (uint16) {
-        // TODO: this formula returns values way too high! Keep the same inputs, but tweak it to return more reasonable rates.
+    function _computeBorrowerInterestRateInBasisPoint(uint8 _creditScore, uint16 _durationInEpochs) private view returns (uint16) {
         return (
             RISK_FREE_RATE_BP
-            + ((RISK_COEFFICIENT_BP * _creditScoreToRiskLevel(_creditScore)) * (DURATION_COEFFICIENT_BP * _durationInDays))
+            + RISK_COEFFICIENT_BP * _creditScoreToRiskLevel(_creditScore)
+            + EPOCH_DURATION_COEFFICIENT_BP * _durationInEpochs
             + FEE_BP
         );
     }
 
-    function _computeLenderInterestRateInBasisPoint(uint8 _riskLevel, uint16 _durationInDays) private view returns (uint16) {
-        uint16 borrowerRateInBasisPoint = _computeBorrowerInterestRateInBasisPoint(_riskLevelToCreditScore(_riskLevel), _durationInDays);
+    function _computeLenderInterestRateInBasisPoint(uint8 _riskLevel, uint16 _durationInEpochs) private view returns (uint16) {
+        uint16 borrowerRateInBasisPoint = _computeBorrowerInterestRateInBasisPoint(_riskLevelToCreditScore(_riskLevel), _durationInEpochs);
 
         return borrowerRateInBasisPoint * (1 - FEE_BP);
     }
