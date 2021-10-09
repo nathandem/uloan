@@ -12,7 +12,7 @@ contract ULoan {
 
     IERC20 public stablecoin;  // TODO: allow admin to change this, in case of emergency with said stablecoin
 
-    uint256 public MIN_DEPOSIT_AMOUNT = 10;  // arbitrary value to be debated
+    uint256 public MIN_DEPOSIT_AMOUNT = 10e18;  // arbitrary value to be debated
     uint256 public MIN_LOCKUP_PERIOD_IN_DAYS = 7;  // arbitrary value to be debated
     uint256 public MIN_RISK_LEVEL = 1;
     uint256 public MAX_RISK_LEVEL = 100;
