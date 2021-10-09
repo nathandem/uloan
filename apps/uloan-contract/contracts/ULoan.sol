@@ -112,7 +112,7 @@ contract ULoan is Ownable {
         uint8 _minRiskLevel,
         uint8 _maxRiskLevel,
         uint16 _lockUpPeriodInDays
-    ) public view returns (uint256, uint256) {
+    ) public view returns (uint16, uint16) {
         require(_maxRiskLevel >= _minRiskLevel, "The max risk level can't be smaller than the min risk level");
         require(_minRiskLevel >= MIN_RISK_LEVEL, "The min risk level can't be smaller than MIN_RISK_LEVEL");
         require(_maxRiskLevel <= MAX_RISK_LEVEL, "The max risk level can't be above MAX_RISK_LEVEL");
@@ -122,10 +122,7 @@ contract ULoan is Ownable {
         uint16 minInterestRateInCentile = _computeLenderInterestRateInCentile(_minRiskLevel, _lockUpPeriodInDays);
         uint16 maxInterestRateInCentile = _computeLenderInterestRateInCentile(_maxRiskLevel, _lockUpPeriodInDays);
 
-        uint256 minReturnEstimate = _amount * minInterestRateInCentile;
-        uint256 maxReturnEstimate = _amount * maxInterestRateInCentile;
-
-        return (minReturnEstimate, maxReturnEstimate);
+        return (minInterestRateInCentile, maxInterestRateInCentile);
     }
 
     /*
