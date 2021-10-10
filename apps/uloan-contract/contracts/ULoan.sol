@@ -48,7 +48,7 @@ contract ULoan is Ownable {
         uint256[] fundedLoanIds;
     }
     uint256 lastCapitalProviderId;
-    mapping(uint256 => CapitalProvider) capitalProviders;
+    mapping(uint256 => CapitalProvider) public capitalProviders;
 
     struct Lender {
         uint256 lenderId;  // the key to find the `CapitalProvider` struct in `capitalProviders`
@@ -114,14 +114,12 @@ contract ULoan is Ownable {
         uint8 _minRiskLevel,
         uint8 _maxRiskLevel,
         uint16 _lockUpPeriodInDays
-    ) public view returns (uint16, uint16) {
-        require(_maxRiskLevel >= _minRiskLevel, "The max risk level can't be smaller than the min risk level");
-        require(_minRiskLevel >= MIN_RISK_LEVEL, "The min risk level can't be smaller than MIN_RISK_LEVEL");
-        require(_maxRiskLevel <= MAX_RISK_LEVEL, "The max risk level can't be above MAX_RISK_LEVEL");
-        require(_lockUpPeriodInDays >= MIN_LOCKUP_PERIOD_IN_DAYS, "The lock-up period can't be shorter than MIN_LOCKUP_PERIOD_IN_DAYS");
-        require(_lockUpPeriodInDays % ULOAN_EPOCH_IN_DAYS == 0, "The lock-up period (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
-        require(_amount >= MIN_DEPOSIT_AMOUNT, "The amount can't be lower than MIN_DEPOSIT_AMOUNT");
-
+    )
+        public
+        view
+        investmentChecks(_amount, _minRiskLevel, _maxRiskLevel, _lockUpPeriodInDays)
+        returns (uint16, uint16)
+    {
         uint16 durationInEpochs = _lockUpPeriodInDays / ULOAN_EPOCH_IN_DAYS;
         uint16 minInterestRateInBasisPoint = _computeLenderInterestRateInBasisPoint(_minRiskLevel, durationInEpochs);
         uint16 maxInterestRateInBasisPoint = _computeLenderInterestRateInBasisPoint(_maxRiskLevel, durationInEpochs);
@@ -139,16 +137,12 @@ contract ULoan is Ownable {
         uint8 _minRiskLevel,
         uint8 _maxRiskLevel,
         uint16 _lockUpPeriodInDays
-    ) public {
-        require(_maxRiskLevel >= _minRiskLevel, "The max risk level can't be smaller than the min risk level");
-        require(_minRiskLevel >= MIN_RISK_LEVEL, "The min risk level can't be smaller than MIN_RISK_LEVEL");
-        require(_maxRiskLevel <= MAX_RISK_LEVEL, "The max risk level can't be above MAX_RISK_LEVEL");
-        require(_lockUpPeriodInDays >= MIN_LOCKUP_PERIOD_IN_DAYS, "The lock-up period can't be shorter than MIN_LOCKUP_PERIOD_IN_DAYS");
-        require(_lockUpPeriodInDays % ULOAN_EPOCH_IN_DAYS == 0, "The lock-up period (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
-        require(_amount >= MIN_DEPOSIT_AMOUNT, "The amount can't be lower than MIN_DEPOSIT_AMOUNT");
-
+    )
+        public
+        investmentChecks(_amount, _minRiskLevel, _maxRiskLevel, _lockUpPeriodInDays)
+    {
         bool success = stablecoin.transferFrom(msg.sender, address(this), _amount);
-        require(success, "The transfer of funds failed, do you have enough funds?");
+        require(success, "The transfer of funds failed, do you have enough funds approved for transfer to the protocol?");
 
         lastCapitalProviderId++;
         CapitalProvider storage newCapitalProvider = capitalProviders[lastCapitalProviderId];
@@ -261,7 +255,7 @@ contract ULoan is Ownable {
         require(loan.state == LoanState.BeingPaidBack, "The loan is ready for repayment yet");
 
         bool success = stablecoin.transferFrom(msg.sender, address(this), loan.amountToRepayEveryEpoch);
-        require(success, "The transfer of funds failed, do you have enough funds?");
+        require(success, "The transfer of funds failed, do you have enough funds approved for transfer to the protocol?");
 
         loan.lastActionTimestamp = block.timestamp;
         loan.numberOfEpochsPaid = loan.numberOfEpochsPaid + 1;
@@ -369,6 +363,24 @@ contract ULoan is Ownable {
     }
 
 
+    // MODIFIERS
+
+    modifier investmentChecks(
+        uint256 _amount,
+        uint8 _minRiskLevel,
+        uint8 _maxRiskLevel,
+        uint16 _lockUpPeriodInDays
+    ) {
+        require(_amount >= MIN_DEPOSIT_AMOUNT, "The amount can't be lower than MIN_DEPOSIT_AMOUNT");
+        require(_minRiskLevel >= MIN_RISK_LEVEL, "The min risk level can't be smaller than MIN_RISK_LEVEL");
+        require(_maxRiskLevel >= _minRiskLevel, "The max risk level can't be smaller than the min risk level");
+        require(_maxRiskLevel <= MAX_RISK_LEVEL, "The max risk level can't be above MAX_RISK_LEVEL");
+        require(_lockUpPeriodInDays >= MIN_LOCKUP_PERIOD_IN_DAYS, "The lock-up period can't be shorter than MIN_LOCKUP_PERIOD_IN_DAYS");
+        require(_lockUpPeriodInDays % ULOAN_EPOCH_IN_DAYS == 0, "The lock-up period (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
+        _;
+    }
+
+
     // PRIVATE FUNCTIONS
 
     function _computeBorrowerInterestRateInBasisPoint(uint8 _creditScore, uint16 _durationInEpochs) private view returns (uint16) {
@@ -383,7 +395,7 @@ contract ULoan is Ownable {
     function _computeLenderInterestRateInBasisPoint(uint8 _riskLevel, uint16 _durationInEpochs) private view returns (uint16) {
         uint16 borrowerRateInBasisPoint = _computeBorrowerInterestRateInBasisPoint(_riskLevelToCreditScore(_riskLevel), _durationInEpochs);
 
-        return borrowerRateInBasisPoint * (1 - FEE_BP);
+        return borrowerRateInBasisPoint - FEE_BP;
     }
 
     function _creditScoreToRiskLevel(uint8 _creditScore) private pure returns (uint8) {
