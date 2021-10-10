@@ -49,6 +49,7 @@ contract ULoan is Ownable {
     }
     uint256 lastCapitalProviderId;
     mapping(uint256 => CapitalProvider) public capitalProviders;
+    mapping(address => uint256[]) lendersToCapitalProviders;  // quick relation between lenders and the capital they lend
 
     struct Lender {
         uint256 lenderId;  // the key to find the `CapitalProvider` struct in `capitalProviders`
@@ -82,7 +83,8 @@ contract ULoan is Ownable {
 
     // EVENTS
     event NewCapitalProvided(uint256 capitalProviderId, uint256 amount, uint8 minRiskLevel, uint8 maxRiskLevel, uint16 lockUpPeriodInDays);
-    event CapitalRecouped(uint256 capitalProviderId, uint256 amountToRecoup);
+    event LenderCapitalRecouped(uint256 amountRecouped, uint256[] capitalProviderIds);
+    event CapitalProviderRecouped(uint256 capitalProviderId, uint256 amountRecouped);
     event LoanRequested(uint256 loanId, uint256 amount, uint8 borrowerCreditScore, uint16 durationInDays);
     event LoanWithdrawn(uint256 loanId);
     event LoanPaidBack(uint256 loanId);
@@ -153,13 +155,40 @@ contract ULoan is Ownable {
         newCapitalProvider.amountProvided = _amount;
         newCapitalProvider.amountAvailable = _amount;
 
+        lendersToCapitalProviders[msg.sender].push(lastCapitalProviderId);
+
         emit NewCapitalProvided(lastCapitalProviderId, _amount, _minRiskLevel, _maxRiskLevel, _lockUpPeriodInDays);
     }
 
     /*
-     * Lender gets back his money + interest (CapitalProvider.amountAvailable).
+     * Lender gets back his/her deposited money (and interests) on all the capital provided.
+     * This withdraws all the available capital of the lender off the protocol.
      */
-    function recoupCapital(uint256 _capitalProviderId) public {
+    function recoupAllCapital() public {
+        uint256[] memory lenderCapitalProviders = lendersToCapitalProviders[msg.sender];
+        require(lenderCapitalProviders.length > 0, "No provided capital is attached to this address");
+
+        uint256 amountToRecoup;
+        for (uint256 i = 0; i < lenderCapitalProviders.length; i++) {
+            CapitalProvider storage lenderCapitalProvider = capitalProviders[lenderCapitalProviders[i]];
+
+            amountToRecoup += lenderCapitalProvider.amountAvailable;
+            lenderCapitalProvider.amountAvailable = 0;
+        }
+
+        require(amountToRecoup > 0, "You currently have no capital to withdraw");
+
+        bool success = stablecoin.transfer(msg.sender, amountToRecoup);
+        require(success, "The transfer of funds from ULoan to your account failed");
+
+        emit LenderCapitalRecouped(amountToRecoup, lenderCapitalProviders);
+    }
+
+    /*
+     * Lender gets back his/her deposited money (and interests) on one capital provided.
+     * Allows for partial withdraws.
+     */
+    function recoupCapitalPerCapitalProvided(uint256 _capitalProviderId) public {
         require(_capitalProviderId <= lastCapitalProviderId, "This capital provider doesn't exist");
 
         CapitalProvider storage capitalProvider = capitalProviders[_capitalProviderId];
@@ -173,7 +202,7 @@ contract ULoan is Ownable {
 
         capitalProvider.amountAvailable = 0;
 
-        emit CapitalRecouped(_capitalProviderId, amountToRecoup);
+        emit CapitalProviderRecouped(_capitalProviderId, amountToRecoup);
     }
 
     /*
@@ -260,7 +289,7 @@ contract ULoan is Ownable {
         loan.lastActionTimestamp = block.timestamp;
         loan.numberOfEpochsPaid = loan.numberOfEpochsPaid + 1;
 
-        for (uint256 i = 0; i <= loan.lenders.length; i++) {
+        for (uint256 i = 0; i < loan.lenders.length; i++) {
             Lender storage loanLender = loan.lenders[i];
             uint256 amountToAddToLender = loanLender.totalAmountToGetBack / loan.totalNumberOfEpochsToPay;
             loanLender.amountPaidBack += amountToAddToLender;
@@ -306,7 +335,7 @@ contract ULoan is Ownable {
         }
         require(loan.amountRequested == sumOfAmounts, "The sum of the amounts provided doesn't match the amount requested for this loan.");
 
-        for (uint256 i = 0; i <= _capitalProviderIds.length; i++) {
+        for (uint256 i = 0; i < _capitalProviderIds.length; i++) {
             require(_capitalProviderIds[i] <= lastCapitalProviderId, "This capital provider doesn't exist");
             CapitalProvider storage loanCapitalProvider = capitalProviders[_capitalProviderIds[i]];
 
