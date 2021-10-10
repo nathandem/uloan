@@ -1,14 +1,33 @@
-import Head from 'next/head';
-import Image from 'next/image';
-import { Result } from 'postcss';
-import Header from '../components/Header';
-import Nav from '../components/Nav';
-import Tabs from '../components/Tabs';
-import styles from '../styles/Home.module.css';
-import requests from '../utils/requests';
+import { ethers } from "ethers"
+import Web3Modal from "web3modal"
 import { useState, useEffect } from 'react';
 
+import Head from 'next/head'
+import Image from 'next/image'
+import { Result } from 'postcss'
+import Header from '../components/Header'
+import Nav from '../components/Nav'
+import Tabs from '../components/Tabs'
+import styles from '../styles/Home.module.css';
+
+import uloanAbi from '../abis/ULoan.json';
+import stablecoinAbi from '../abis/Stablecoin.json';
+
+
 export default function Home() {
+  // const [user, setUser] = useState({
+  //     "provider": null,
+  //     "signer": null,
+  //     "signerAddress": null,
+  // })
+  const [contracts, setContracts] = useState({
+      "uloanContract": null,
+      "stablecoinContract": null
+  })
+  useEffect(() => {
+    connectContracts()
+  }, [])
+
   const [account, setAccount] = useState(null);
   useEffect(() => {
     async function connect() {
@@ -19,6 +38,35 @@ export default function Home() {
     }
     connect();
   }, []);
+
+  async function connectContracts() {
+    // address from local host
+    const uloanContract = new ethers.Contract("0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512", uloanAbi, user.signer);
+    // Get Stablecoin ERC20 address
+    const tokenAddress = await uloanContract.stablecoin();
+    // const tokenAddress = '';  // Public Testnet
+    const stablecoinContract = new ethers.Contract(tokenAddress, stablecoinAbi, user.signer);
+    
+    setContracts({
+      "uloanContract": uloanContract,
+      "stablecoinContract": stablecoinContract
+    })
+  }
+// alternative to window-ethereum
+  async function connectUser() {
+    const web3Modal = new Web3Modal()
+    const connection = await web3Modal.connect()
+    const provider = new ethers.providers.Web3Provider(connection)
+    const signer = provider.getSigner()
+    
+    setUser({
+      "provider": provider,
+      "signer": signer,
+      "signerAddress": signer.getAddress(),
+    })
+  }
+ 
+  
   return (
     <div>
       <Head>
@@ -35,7 +83,7 @@ export default function Home() {
 
       {/* Tabs */}
       <div className='pt-16 px-48'>
-        <Tabs account={account} />
+        <Tabs account={account} contracts={contracts} Tabs/>
       </div>
     </div>
   );
