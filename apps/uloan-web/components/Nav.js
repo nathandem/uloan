@@ -1,18 +1,10 @@
-<<<<<<< HEAD
-import requests from "../utils/requests";
-=======
 // import requests from "../utils/requests";
->>>>>>> web
 import { useRouter } from "next/router";
 import HeaderItem from "./HeaderItem";
 import {
     BadgeCheckIcon,
     CollectionIcon,
     HomeIcon,
-<<<<<<< HEAD
-    CreditCardIcon,
-=======
->>>>>>> web
     SearchIcon,
     UserIcon,
 } from "@heroicons/react/outline";
