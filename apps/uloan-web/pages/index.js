@@ -1,4 +1,3 @@
-
 import { ethers } from "ethers"
 import Web3Modal from "web3modal"
 import { useState, useEffect } from 'react';
@@ -9,8 +8,7 @@ import { Result } from 'postcss'
 import Header from '../components/Header'
 import Nav from '../components/Nav'
 import Tabs from '../components/Tabs'
-
-// import requests from "../utils/requests"
+import styles from '../styles/Home.module.css';
 
 import uloanAbi from '../abis/ULoan.json';
 import stablecoinAbi from '../abis/Stablecoin.json';
@@ -39,7 +37,7 @@ export default function Home() {
       }
     }
     connect();
-  })
+  }, []);
 
   async function connectContracts() {
     // address from local host
