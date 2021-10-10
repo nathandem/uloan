@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Web3 from 'web3';
+import ULoan from '../uloan'
 
 function Lend({ account }) {
   const [usdcBalance, setUsdcBalance] = useState(null);
@@ -21,7 +22,7 @@ function Lend({ account }) {
           },
         ];
 
-        const usdc = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
+        const usdc = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
         const contract = new web3.eth.Contract(minABI, usdc);
         const result = await contract.methods.balanceOf(account).call();
         const format = result / Math.pow(10, 6);
@@ -35,8 +36,8 @@ function Lend({ account }) {
     <div className='flex flex-col pt-2'>
       <div className='flex flex-row justify-between items-center px-16'>
         <h1 className='font-bold'>ASSET</h1>
-        <h1 className='font-bold mr-16'>APY</h1>
-        <h1 className='font-bold mr-24'>DEPOSIT</h1>
+        <h1 className='font-bold mr-20'>APY</h1>
+        <h1 className='font-bold mr-28'>DEPOSIT</h1>
         <h1 className='font-bold'>WITHDRAW</h1>
       </div>
       <div className='flex flex-row justify-between items-center p-5'>
@@ -51,15 +52,33 @@ function Lend({ account }) {
         <h1 className='font-bold'>2.19%</h1>
         <form>
           <div className='flex flex-col'>
-            <div className='flex items-center border-b py-2'>
-              <input
-                className='w-24 appearance-none bg-transparent border-none focus:outline-none font-bold text-md'
-                type='number'
-                step='0.0001'
-                placeholder='Amount'
-                aria-label='Deposit amount'
-              />
-              <button className='font-bold border p-2 hover:bg-gray-600 active:scale-95 rounded'>
+            <div className='flex items-center py-2'>
+              <div className='flex flex-col px-4'>
+                <input
+                  className='w-32 mb-2 appearance-none bg-transparent border-b focus:outline-none font-bold text-md'
+                  type='number'
+                  step='0.0001'
+                  min='0'
+                  placeholder='Amount'
+                  aria-label='Deposit amount'
+                />
+                <input
+                  className='w-32 mb-2 appearance-none bg-transparent border-b focus:outline-none font-bold text-md'
+                  type='number'
+                  placeholder='Max Risk'
+                  aria-label='Risk'
+                  max='100'
+                  min='0'
+                />
+                <input
+                  className='w-32 appearance-none bg-transparent border-b focus:outline-none font-bold text-md'
+                  type='number'
+                  placeholder='Duration (Days)'
+                  aria-label='Duration'
+                  min='1'
+                />
+              </div>
+              <button className='font-bold border mt-2 p-2 hover:bg-gray-600 active:scale-95 rounded'>
                 Deposit
               </button>
             </div>
@@ -70,15 +89,14 @@ function Lend({ account }) {
         </form>
         <form>
           <div className='flex flex-col'>
-            <div className='flex items-center border-b py-2'>
+            <div className='flex items-center py-2'>
               <input
-                className='w-24 appearance-none bg-transparent border-none focus:outline-none font-bold text-md'
+                className='w-16 appearance-none bg-transparent border-b focus:outline-none font-bold text-md'
                 type='number'
-                step='0.0001'
-                placeholder='Amount'
-                aria-label='Withdraw amount'
+                placeholder='ID'
+                aria-label='Withdraw'
               />
-              <button className='font-bold border p-2 hover:bg-gray-600 active:scale-95 rounded'>
+              <button className='font-bold border ml-4 p-2 hover:bg-gray-600 active:scale-95 rounded'>
                 Withdraw
               </button>
             </div>
