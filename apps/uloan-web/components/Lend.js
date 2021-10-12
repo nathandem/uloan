@@ -73,7 +73,7 @@ function Lend({ account, contracts, setContracts, user, setUser }) {
       console.log("setContract info: ", contracts)
   }
   async function makeDeposit() {
-    // await connectContracts()
+    await connectContracts()
     const { amount, maxRisk, lockPeriod } = formInput
     if (!amount || !maxRisk || !lockPeriod) return 
     // access uloan contract
