@@ -1,6 +1,8 @@
+
+
 import { ethers } from "ethers"
 import Web3Modal from "web3modal"
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react'
 
 import Head from 'next/head'
 import Image from 'next/image'
@@ -8,65 +10,79 @@ import { Result } from 'postcss'
 import Header from '../components/Header'
 import Nav from '../components/Nav'
 import Tabs from '../components/Tabs'
-import styles from '../styles/Home.module.css';
+import styles from '../styles/Home.module.css'
 
-import uloanAbi from '../abis/ULoan.json';
-import stablecoinAbi from '../abis/Stablecoin.json';
+import ULOAN from '../abis/ULoan.json';
+import STABLECOIN from '../abis/Stablecoin.json'
 
+//Addresses of contract. Need to be in environment variables in production
+const uloanContractAddr = '0xe7f1725e7734ce288f8367e1bb143e90bb3f0512'
+const stablecoinContractAddr = '0x5fbdb2315678afecb367f032d93f642f64180aa3'
 
 export default function Home() {
-  // const [user, setUser] = useState({
-  //     "provider": null,
-  //     "signer": null,
-  //     "signerAddress": null,
-  // })
-  const [contracts, setContracts] = useState({
-      "uloanContract": null,
-      "stablecoinContract": null
+  const [user, setUser] = useState({
+      provider: null,
+      signer: null,
+      signerAddress: null,
   })
-  useEffect(() => {
-    connectContracts()
-  }, [])
-
+  const [contracts, setContracts] = useState({
+      uloanContract: null,
+      stablecoinContract: null
+  })
   const [account, setAccount] = useState(null);
   useEffect(() => {
-    async function connect() {
+    async function connectUser() {  
       if (window.ethereum) {
-        const accounts = await window.ethereum.enable();
-        setAccount(accounts[0]);
+        // const accounts = await window.ethereum.enable();
+        // setAccount(accounts[0]);
+        const web3Modal = new Web3Modal()
+        const connection = await web3Modal.connect()
+        const provider = new ethers.providers.Web3Provider(connection)
+        const signer = provider.getSigner()
+        const signerAddress = await signer.getAddress()
+        setAccount(signerAddress)
+     
+        console.log("signer: ", signer)
+        console.log("user: ", user)
+        console.log("provider: ", provider)
+        console.log("account: ", account)
       }
     }
-    connect();
+    connectUser();
+  }, ['account']);
+  useEffect(() => {
+    connectContracts();
   }, []);
-
-  async function connectContracts() {
-    // address from local host
-    const uloanContract = new ethers.Contract("0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512", uloanAbi, user.signer);
-    // Get Stablecoin ERC20 address
-    const tokenAddress = await uloanContract.stablecoin();
-    // const tokenAddress = '';  // Public Testnet
-    const stablecoinContract = new ethers.Contract(tokenAddress, stablecoinAbi, user.signer);
     
-    setContracts({
-      "uloanContract": uloanContract,
-      "stablecoinContract": stablecoinContract
-    })
-  }
-// alternative to window-ethereum
-  async function connectUser() {
-    const web3Modal = new Web3Modal()
-    const connection = await web3Modal.connect()
-    const provider = new ethers.providers.Web3Provider(connection)
-    const signer = provider.getSigner()
-    
-    setUser({
-      "provider": provider,
-      "signer": signer,
-      "signerAddress": signer.getAddress(),
-    })
-  }
- 
   
+
+  async function connectContracts() {  
+    if (account) {
+      const web3Modal = new Web3Modal()
+      const connection = await web3Modal.connect()
+      const provider = new ethers.providers.Web3Provider(connection)
+      const signer = provider.getSigner()
+      const signerAddress = await signer.getAddress()
+      // address from local host
+      const uloanContract = new ethers.Contract(uloanContractAddr, ULOAN.abi, signer)
+      // Get Stablecoin ERC20 address
+      const tokenAddress = await uloanContract.stablecoin()
+      // const tokenAddress = '';  //Testnet
+      const stablecoinContract = new ethers.Contract(tokenAddress, STABLECOIN.abi, signer)
+      setUser({
+        provider: provider,
+        signer: signer,
+        signerAddress: signerAddress,
+      })
+      console.log("setUser info: ", user)
+      setContracts({
+        uloanContract: uloanContract,
+        stablecoinContract: stablecoinContract
+      })
+      console.log("setContract info: ", contracts)
+    }
+  }
+
   return (
     <div>
       <Head>
@@ -76,18 +92,23 @@ export default function Home() {
       </Head>
 
       {/* Header */}
-      <Header account={account} setAccount={setAccount}></Header>
+      <Header account={account} setAccount={setAccount} ></Header>
       {/* Nav */}
 
       <Nav />
 
       {/* Tabs */}
       <div className='pt-16 px-48'>
-        <Tabs account={account} contracts={contracts} Tabs/>
+        <Tabs account={account} contracts={contracts} setContracts={setContracts} user={user} setUser={setUser} Tabs/>
       </div>
     </div>
   );
-  // export async function getServerSideProps(context) {
-  //   const genre = context.query.genre;
-  // }
 }
+// export async function getServerSideProps() {
+//   // Fetch data from external API
+//   const res = await fetch(`https://.../data`)
+//   const data = await res.json()
+
+//   // Pass data to the page via props
+//   return { props: { data } }
+// }
