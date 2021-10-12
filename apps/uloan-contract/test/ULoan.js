@@ -39,7 +39,7 @@ describe("ULoan", () => {
         });
     });
 
-    describe("[Lender] Investment estimation and deposit", () => {
+    describe("[Lender] Investment estimation, deposit and withdrawal", () => {
         // protocol constants
         let ULOAN_EPOCH_IN_DAYS;
         let MIN_DEPOSIT_AMOUNT;
@@ -142,6 +142,48 @@ describe("ULoan", () => {
                 await stablecoinMock.mock.transferFrom.withArgs(bob.address, uloan.address, valid_amount).returns(true);
                 await expect(uloan.connect(bob).depositCapital(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days))
                     .to.emit(uloan, "NewCapitalProvided").withArgs(2, valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
+            });
+        });
+
+        describe("Recoup available capital", () => {
+            async function aliceDepositsFunds(amount, min_risk, max_risk, lock_period_in_days) {
+                await stablecoinMock.mock.transferFrom.withArgs(alice.address, uloan.address, amount).returns(true);
+                await uloan.connect(alice).depositCapital(amount, min_risk, max_risk, lock_period_in_days);
+            }
+
+            it("Fails if the requester has not provided any capital", async () => {
+                await expect(uloan.recoupAllCapital()).to.be.revertedWith("No provided capital is attached to this address");
+            });
+
+            // TODO: come back to this test later when loan creation and matching tested
+            it.skip("Fails if lender has currently no available capital to withdraw", async () => {});
+
+            it("In case of success, all of the capital available is withdrawn", async () => {
+                await aliceDepositsFunds(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
+                // because it's not possible to return dynamic storage arrays, we can't check the value of `lendersToCapitalProviders`...
+
+                let aliceCapitalProvided;
+                aliceCapitalProvided = await uloan.capitalProviders(1);
+                expect(aliceCapitalProvided.amountAvailable).to.eq(valid_amount);
+
+                await stablecoinMock.mock.transfer.withArgs(alice.address, valid_amount).returns(true);
+                await uloan.connect(alice).recoupAllCapital();
+
+                aliceCapitalProvided = await uloan.capitalProviders(1);
+                expect(aliceCapitalProvided.amountAvailable).to.eq(0);
+            });
+
+            it("In case of success, all the capital provided is withdrawn", async () => {
+                await aliceDepositsFunds(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
+                await aliceDepositsFunds(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
+
+                await stablecoinMock.mock.transfer.returns(true);
+                await uloan.connect(alice).recoupAllCapital();
+
+                let aliceAmountAvailableInProtocol = 0;
+                aliceAmountAvailableInProtocol += (await uloan.capitalProviders(1)).amountAvailable.toNumber();
+                aliceAmountAvailableInProtocol += (await uloan.capitalProviders(2)).amountAvailable.toNumber();
+                expect(aliceAmountAvailableInProtocol).to.eq(0);
             });
         });
     });
