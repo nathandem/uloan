@@ -47,9 +47,10 @@ contract ULoan is Ownable {
         uint256 amountAvailable;  // at the beginning, amountAvailable == amountProvided, but it will change over time because 1) funds will be lent, 2) interests will be earnt, 3) lender will recoup some or all of this amount
         uint256[] fundedLoanIds;
     }
-    uint256 lastCapitalProviderId;
+    uint256 public lastCapitalProviderId;
     mapping(uint256 => CapitalProvider) public capitalProviders;
-    mapping(address => uint256[]) lendersToCapitalProviders;  // quick relation between lenders and the capital they lend
+    // dynamic storage arrays can't be returned as-is, need to cast them into memory arrays in function then return them (see `_getLendersToCapitalProviders`)
+    mapping(address => uint256[]) public lendersToCapitalProviders;  // quick relation between lenders and the capital they lend
 
     struct Lender {
         uint256 lenderId;  // the key to find the `CapitalProvider` struct in `capitalProviders`
@@ -313,7 +314,7 @@ contract ULoan is Ownable {
         }
     }
 
-    /* UTILITY FUNCTIONS */
+    /* PROTOCOL OPERATORS FUNCTIONS */
 
     /*
      * Function to associate loans with capital providers.
@@ -446,5 +447,17 @@ contract ULoan is Ownable {
      */
     function _percentageOf(uint256 x, uint256 basisPoints) internal pure returns (uint256) {
         return x.mul(basisPoints).div(10000);
+    }
+
+    // UTILITY FUNCTIONS
+
+    /*
+     * Trick to return a dynamic storage array: have Solidity create a new variable which casts it.
+     */
+    function _getLendersToCapitalProviders(address lender) public view returns (uint256[] memory) {
+        uint256[] memory lenderCapitalProvided = lendersToCapitalProviders[lender];
+        require(lenderCapitalProvided.length > 0, "No capital provided by this account");
+
+        return lenderCapitalProvided;
     }
 }

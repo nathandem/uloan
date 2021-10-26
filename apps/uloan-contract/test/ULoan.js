@@ -102,7 +102,7 @@ describe("ULoan", () => {
             });
         });
 
-        describe("Get estimated interest rates", () => {
+        describe("Get estimated interest rates in basis point", () => {
             it("Give proper min and max interest rates when arguments are correct", async () => {
                 const [minRate, maxRate] = await uloan.getReturnEstimateInBasisPoint(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
                 expect(maxRate).to.be.greaterThan(minRate);
@@ -125,16 +125,21 @@ describe("ULoan", () => {
                     .to.be.revertedWith("The transfer of funds failed, do you have enough funds approved for transfer to the protocol?");
             });
 
-            it("In case of success, capital provided correct stored on-chain", async () => {
+            it("In case of success, capital provided correctly stored on-chain", async () => {
                 await uloan.connect(alice).depositCapital(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
+                const lastCapitalProviderId = (await uloan.lastCapitalProviderId()).toNumber();
 
-                const newCapitalProvider = await uloan.capitalProviders(1);
+                const newCapitalProvider = await uloan.capitalProviders(lastCapitalProviderId);
                 expect(newCapitalProvider.lender).to.eq(alice.address);
                 expect(newCapitalProvider.minRiskLevel).to.eq(valid_min_risk);
                 expect(newCapitalProvider.maxRiskLevel).to.eq(valid_max_risk);
                 expect(newCapitalProvider.lockUpPeriodInDays).to.eq(valid_lock_period_in_days);
                 expect(newCapitalProvider.amountProvided).to.eq(valid_amount);
                 expect(newCapitalProvider.amountAvailable).to.eq(valid_amount);
+
+                const aliceCapitalProvidedRaw = await uloan._getLendersToCapitalProviders(alice.address);
+                const aliceCapitalProvidedParsed = aliceCapitalProvidedRaw.map(n => n.toNumber());  // only cast to number because for sure under max JS number value
+                expect(aliceCapitalProvidedParsed).to.deep.eq([1]);
             });
 
             it("In case of success, protocol emits an event when capital provided properly created", async () => {
@@ -143,12 +148,15 @@ describe("ULoan", () => {
             });
 
             it("In case of success, every new capital provided get a unique identifier", async () => {
+                const firstCapitalProviderId = 1;
+                const secondCapitalProviderId = 2;
+
                 await expect(uloan.connect(alice).depositCapital(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days))
-                    .to.emit(uloan, "NewCapitalProvided").withArgs(1, valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
+                    .to.emit(uloan, "NewCapitalProvided").withArgs(firstCapitalProviderId, valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
 
                 await stablecoinMock.mock.transferFrom.withArgs(bob.address, uloan.address, valid_amount).returns(true);
                 await expect(uloan.connect(bob).depositCapital(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days))
-                    .to.emit(uloan, "NewCapitalProvided").withArgs(2, valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
+                    .to.emit(uloan, "NewCapitalProvided").withArgs(secondCapitalProviderId, valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
             });
         });
 
@@ -159,22 +167,22 @@ describe("ULoan", () => {
             }
 
             it("Fails if the requester has not provided any capital", async () => {
-                await expect(uloan.recoupAllCapital()).to.be.revertedWith("No provided capital is attached to this address");
+                await expect(uloan.connect(bob).recoupAllCapital()).to.be.revertedWith("No provided capital is attached to this address");
             });
 
             // TODO: come back to this test later when loan creation and matching tested
             it.skip("Fails if lender has currently no available capital to withdraw", async () => {});
 
-            it("In case of success, all of the capital available is withdrawn", async () => {
+            it("In case of success, all of the capital available of an user is withdrawn", async () => {
                 await aliceDepositsFunds(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
-                // because it's not possible to return dynamic storage arrays, we can't check the value of `lendersToCapitalProviders`...
 
                 let aliceCapitalProvided;
                 aliceCapitalProvided = await uloan.capitalProviders(1);
                 expect(aliceCapitalProvided.amountAvailable).to.eq(valid_amount);
 
                 await stablecoinMock.mock.transfer.withArgs(alice.address, valid_amount).returns(true);
-                await uloan.connect(alice).recoupAllCapital();
+                await expect(uloan.connect(alice).recoupAllCapital())
+                    .to.emit(uloan, "LenderCapitalRecouped").withArgs(valid_amount, [1]);
 
                 aliceCapitalProvided = await uloan.capitalProviders(1);
                 expect(aliceCapitalProvided.amountAvailable).to.eq(0);
@@ -184,13 +192,20 @@ describe("ULoan", () => {
                 await aliceDepositsFunds(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
                 await aliceDepositsFunds(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
 
+                // bob deposits as well but his amount shouldn't be affected
+                await stablecoinMock.mock.transferFrom.withArgs(bob.address, uloan.address, valid_amount).returns(true);
+                await uloan.connect(bob).depositCapital(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
+
                 await stablecoinMock.mock.transfer.returns(true);
                 await uloan.connect(alice).recoupAllCapital();
 
-                let aliceAmountAvailableInProtocol = 0;
-                aliceAmountAvailableInProtocol += (await uloan.capitalProviders(1)).amountAvailable.toNumber();
-                aliceAmountAvailableInProtocol += (await uloan.capitalProviders(2)).amountAvailable.toNumber();
-                expect(aliceAmountAvailableInProtocol).to.eq(0);
+                let aliceAmountAvailableInProtocol = ethers.BigNumber.from(0);
+                aliceAmountAvailableInProtocol.add((await uloan.capitalProviders(1)).amountAvailable);
+                aliceAmountAvailableInProtocol.add((await uloan.capitalProviders(2)).amountAvailable);
+                expect(aliceAmountAvailableInProtocol.eq(0)).to.be.true;
+
+                // the capital of bob is still in the contract
+                expect((await uloan.capitalProviders(3)).amountAvailable).to.eq(valid_amount);
             });
         });
     });
