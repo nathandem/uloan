@@ -17,6 +17,7 @@ contract ULoan is Ownable {
     IERC20 public stablecoin;
 
     uint16 public ULOAN_EPOCH_IN_DAYS = 7;  // arbitrary value to be debated
+    uint16 public ULOAN_EPOCH_IN_YEAR = 52;
 
     uint256 public MIN_DEPOSIT_AMOUNT = 10e18;  // arbitrary value to be debated
     uint256 public MIN_LOCKUP_PERIOD_IN_DAYS = ULOAN_EPOCH_IN_DAYS;  // arbitrary value to be debated
@@ -29,9 +30,9 @@ contract ULoan is Ownable {
 
     // Following values are in basis points. For example, 100 equals 1, 40 equals 0.40
     uint16 public RISK_FREE_RATE_BP = 100;  // value to be fetch from a "risk-free" protocol like Uniswap
-    uint16 public RISK_COEFFICIENT_BP = 20;  // arbitrary value to be debated
-    uint16 public EPOCH_DURATION_COEFFICIENT_BP = 1;  // arbitrary value to be debated
-    uint16 public FEE_TO_MATCH_INITIATOR_BP = 200;  // arbitrary value to be debated
+    uint16 public RISK_COEFFICIENT_BP = 10;  // arbitrary value to be debated
+    uint16 public EPOCH_DURATION_COEFFICIENT_BP = 2;  // arbitrary value to be debated
+    uint16 public FEE_TO_MATCH_INITIATOR_BP = 100;  // arbitrary value to be debated
     uint16 public FEE_TO_PROTOCOL_OWNER_BP = 100;  // arbitrary value to be debated
     uint16 public FEE_BP = FEE_TO_MATCH_INITIATOR_BP + FEE_TO_PROTOCOL_OWNER_BP;
 
@@ -126,8 +127,8 @@ contract ULoan is Ownable {
         returns (uint16, uint16)
     {
         uint16 durationInEpochs = _lockUpPeriodInDays / ULOAN_EPOCH_IN_DAYS;
-        uint16 minInterestRateInBasisPoint = _computeLenderInterestRateInBasisPoint(_minRiskLevel, durationInEpochs);
-        uint16 maxInterestRateInBasisPoint = _computeLenderInterestRateInBasisPoint(_maxRiskLevel, durationInEpochs);
+        uint16 minInterestRateInBasisPoint = _computeLenderInterestRateForPeriodInBasisPoint(_minRiskLevel, durationInEpochs);
+        uint16 maxInterestRateInBasisPoint = _computeLenderInterestRateForPeriodInBasisPoint(_maxRiskLevel, durationInEpochs);
 
         return (minInterestRateInBasisPoint, maxInterestRateInBasisPoint);
     }
@@ -214,7 +215,7 @@ contract ULoan is Ownable {
      * Returns an interest on a declarative basis. In other words, the prospective borrower is free to pass
      * a credit score which doesn't correspond to the one he/she would receive when calling the dedicated function.
      *
-     * Important note: the amount is return in centile.
+     * Important note: the amount is returned in centile.
      */
     function getInterestEstimateInBasisPoint(uint256 _amount, uint8 _creditScore, uint16 _durationInDays) public view returns (uint16) {
         require(_durationInDays >= MIN_LOAN_DURATION_IN_DAYS, "The lock-up period can't be shorter than MIN_LOAN_DURATION_IN_DAYS");
@@ -222,7 +223,7 @@ contract ULoan is Ownable {
         require(_durationInDays % ULOAN_EPOCH_IN_DAYS == 0, "The loan duration (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
         require(_amount >= MIN_LOAN_AMOUNT, "The amount can't be lower than MIN_LOAN_AMOUNT");
 
-        return _computeBorrowerInterestRateInBasisPoint(_creditScore, (_durationInDays / ULOAN_EPOCH_IN_DAYS));
+        return _computeBorrowerInterestRateForPeriodInBasisPoint(_creditScore, (_durationInDays / ULOAN_EPOCH_IN_DAYS));
     }
 
     /*
@@ -238,7 +239,7 @@ contract ULoan is Ownable {
         require(_amount >= MIN_LOAN_AMOUNT, "The amount can't be lower than MIN_LOAN_AMOUNT");
 
         uint16 durationInEpochs = _durationInDays / ULOAN_EPOCH_IN_DAYS;
-        uint256 amountToRepay = _amount + _percentageOf(_amount, _computeBorrowerInterestRateInBasisPoint(borrowerCreditScore, durationInEpochs));
+        uint256 amountToRepay = _amount + _percentageOf(_amount, _computeBorrowerInterestRateForPeriodInBasisPoint(borrowerCreditScore, durationInEpochs));
         uint16 totalNumberOfEpochsToPay = _durationInDays / ULOAN_EPOCH_IN_DAYS;
 
         lastLoanId++;
@@ -354,7 +355,7 @@ contract ULoan is Ownable {
 
             // If the checks pass, reflect the matching of the capital with the loan in the capitalProvider and the loan
             uint16 durationInEpochs = loan.durationInDays / ULOAN_EPOCH_IN_DAYS;
-            uint16 lenderInterestRateInBasisPoint = _computeLenderInterestRateInBasisPoint(_creditScoreToRiskLevel(loan.creditScore), durationInEpochs);
+            uint16 lenderInterestRateInBasisPoint = _computeLenderInterestRateForPeriodInBasisPoint(_creditScoreToRiskLevel(loan.creditScore), durationInEpochs);
             uint256 totalAmountToGetBack = (
                 _capitalProviderAmounts[i]
                 + _percentageOf(_capitalProviderAmounts[i], lenderInterestRateInBasisPoint)
@@ -417,9 +418,12 @@ contract ULoan is Ownable {
     }
 
 
-    // PRIVATE FUNCTIONS
+    // PRIVATE FUNCTIONS (made public for testing purposes)
 
-    function _computeBorrowerInterestRateInBasisPoint(uint8 _creditScore, uint16 _durationInEpochs) private view returns (uint16) {
+    // TODO: find a non-linear solution for the risk coefficient
+    // Power/exponent work with '**' but values are too high because no float is possible
+    // So stick with linear option for now.
+    function _computeBorrowerInterestRateForPeriodInBasisPoint(uint8 _creditScore, uint16 _durationInEpochs) public view returns (uint16) {
         return (
             RISK_FREE_RATE_BP
             + RISK_COEFFICIENT_BP * _creditScoreToRiskLevel(_creditScore)
@@ -428,17 +432,17 @@ contract ULoan is Ownable {
         );
     }
 
-    function _computeLenderInterestRateInBasisPoint(uint8 _riskLevel, uint16 _durationInEpochs) private view returns (uint16) {
-        uint16 borrowerRateInBasisPoint = _computeBorrowerInterestRateInBasisPoint(_riskLevelToCreditScore(_riskLevel), _durationInEpochs);
+    function _computeLenderInterestRateForPeriodInBasisPoint(uint8 _riskLevel, uint16 _durationInEpochs) public view returns (uint16) {
+        uint16 borrowerRateInBasisPoint = _computeBorrowerInterestRateForPeriodInBasisPoint(_riskLevelToCreditScore(_riskLevel), _durationInEpochs);
 
         return borrowerRateInBasisPoint - FEE_BP;
     }
 
-    function _creditScoreToRiskLevel(uint8 _creditScore) private pure returns (uint8) {
+    function _creditScoreToRiskLevel(uint8 _creditScore) public pure returns (uint8) {
         return (100 - _creditScore);
     }
 
-    function _riskLevelToCreditScore(uint8 _riskLevel) private pure returns (uint8) {
+    function _riskLevelToCreditScore(uint8 _riskLevel) public pure returns (uint8) {
         return (100 - _riskLevel);
     }
 
