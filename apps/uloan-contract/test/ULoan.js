@@ -1,5 +1,6 @@
 const { expect } = require("chai");
 const { deployMockContract } = require("ethereum-waffle");
+// hardhat `ethers` object is an extended version of the regular ethers library
 const { ethers } = require("hardhat");
 
 const Stablecoin = require('../artifacts/contracts/Stablecoin.sol/Stablecoin.json');
@@ -22,15 +23,37 @@ describe("ULoan", () => {
     let alice;
     let charles;
 
-    before(async () => {
-        [owner, bob, alice, charles] = await ethers.getSigners();
-        ULoanContract = await ethers.getContractFactory("ULoan");
-    });
+    // protocol constants
+    let ULOAN_EPOCH_IN_DAYS;
+    let MIN_DEPOSIT_AMOUNT;
+    let MIN_LOCKUP_PERIOD_IN_DAYS;
+    let MIN_RISK_LEVEL;
+    let MAX_RISK_LEVEL;
 
-    beforeEach(async () => {
+    async function _deploy_uloan() {
         stablecoinMock = await deployMockContract(owner, Stablecoin.abi);
         uloan = await ULoanContract.deploy(stablecoinMock.address);
         await uloan.deployed();
+    }
+
+    before(async () => {
+        [owner, bob, alice, charles] = await ethers.getSigners();
+        ULoanContract = await ethers.getContractFactory("ULoan");
+
+        // contract needs to be available/deployed to get the contract constants
+        // (eventhough we'll do that before each test, see `beforeEach`)
+        await _deploy_uloan();
+
+        // ethersjs `BigNumber` type (not JS's `number` type)
+        ULOAN_EPOCH_IN_DAYS = await uloan.ULOAN_EPOCH_IN_DAYS();
+        MIN_DEPOSIT_AMOUNT = await uloan.MIN_DEPOSIT_AMOUNT();
+        MIN_LOCKUP_PERIOD_IN_DAYS = await uloan.MIN_LOCKUP_PERIOD_IN_DAYS();
+        MIN_RISK_LEVEL = await uloan.MIN_RISK_LEVEL();
+        MAX_RISK_LEVEL = await uloan.MAX_RISK_LEVEL();
+    });
+
+    beforeEach(async () => {
+        await _deploy_uloan();
     });
 
     describe("Correctly initialize the contract when being deployed", () => {
@@ -39,29 +62,13 @@ describe("ULoan", () => {
         });
     });
 
-    describe("[Lender] Investment estimation, deposit and withdrawal", () => {
-        // protocol constants
-        let ULOAN_EPOCH_IN_DAYS;
-        let MIN_DEPOSIT_AMOUNT;
-        let MIN_LOCKUP_PERIOD_IN_DAYS;
-        let MIN_RISK_LEVEL;
-        let MAX_RISK_LEVEL;
-
+    describe("Lender operations", () => {
         // lender inputs
         // reminder: amounts are dealt with in wei-like denomination (18 decimal)
         const valid_amount = ethers.utils.parseEther('1000').toString();
         const valid_min_risk = 20;
         const valid_max_risk = 60;
         const valid_lock_period_in_days = 84;
-
-        before(async () => {
-            // ethersjs `BigNumber` type (not JS's `number` type)
-            ULOAN_EPOCH_IN_DAYS = await uloan.ULOAN_EPOCH_IN_DAYS();
-            MIN_DEPOSIT_AMOUNT = await uloan.MIN_DEPOSIT_AMOUNT();
-            MIN_LOCKUP_PERIOD_IN_DAYS = await uloan.MIN_LOCKUP_PERIOD_IN_DAYS();
-            MIN_RISK_LEVEL = await uloan.MIN_RISK_LEVEL();
-            MAX_RISK_LEVEL = await uloan.MAX_RISK_LEVEL();
-        });
 
         describe("Common verifications", () => {
             it("Fails when max risk level under min risk level", async () => {

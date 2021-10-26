@@ -99,6 +99,8 @@ contract ULoan is Ownable {
 
     // PUBLIC FUNCTIONS
 
+    /* DEPOSITOR FUNCTIONS */
+
     /*
      * Runs the interest rate formula for lender with the incoming parameters, once with the min risk level
      * and one with the max risk level the lender is willing to take. This gives the lender a range of what he/she
@@ -205,6 +207,8 @@ contract ULoan is Ownable {
         emit CapitalProviderRecouped(_capitalProviderId, amountToRecoup);
     }
 
+    /* BORROWER FUNCTIONS */
+
     /*
      * Returns an interest on a declarative basis. In other words, the prospective borrower is free to pass
      * a credit score which doesn't correspond to the one he/she would receive when calling the dedicated function.
@@ -308,6 +312,8 @@ contract ULoan is Ownable {
             emit LoanPaidBack(_loanId);
         }
     }
+
+    /* UTILITY FUNCTIONS */
 
     /*
      * Function to associate loans with capital providers.
