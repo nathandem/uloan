@@ -14,8 +14,9 @@ const ULOAN_STATES = {
     Closed: 4
 }
 
-describe("ULoan", () => {
-    let ULoanContract;
+// see ULoanTest to understand why ULoan is tested through ULoanTest
+describe("ULoanTest", () => {
+    let ULoanTestContract;
     let uloan;
     let stablecoinMock;
     let owner;
@@ -44,13 +45,13 @@ describe("ULoan", () => {
 
     async function _deploy_uloan() {
         stablecoinMock = await deployMockContract(owner, Stablecoin.abi);
-        uloan = await ULoanContract.deploy(stablecoinMock.address);
+        uloan = await ULoanTestContract.deploy(stablecoinMock.address);
         await uloan.deployed();
     }
 
     before(async () => {
         [owner, bob, alice, charles] = await ethers.getSigners();
-        ULoanContract = await ethers.getContractFactory("ULoan");
+        ULoanTestContract = await ethers.getContractFactory("ULoanTest");
 
         // contract needs to be available/deployed to get the contract constants
         // (eventhough we'll do that before each test, see `beforeEach`)
@@ -316,6 +317,74 @@ describe("ULoan", () => {
 
                 value = await uloan.getInterestEstimateForPeriodInBasisPoint(valid_amount, 30, ULOAN_EPOCH_IN_DAYS * 52);
                 expect(value).to.eq(1104);
+            });
+        });
+
+        describe("Request a loan", () => {
+            const aliceCreditScore = 80;
+
+            // needs to beforeEach because contract is deployed between every individual test
+            beforeEach(async () => {
+                await uloan.__testOnly_setBorrowerCreditScore(alice.address, aliceCreditScore);
+            });
+
+            it("Fails if the borrower has no credit score", async () => {
+                await expect(uloan.connect(bob).requestLoan(valid_amount, valid_duration_in_days)).to.be.revertedWith("You must have a credit score to request a loan. Get one first!");
+            });
+
+            it("Creates a loan without lenders and emit an event about it when credit score exist", async () => {
+                const nextBlockTimestamp = 2627657056;
+                await hre.network.provider.request({
+                    method: "evm_setNextBlockTimestamp",
+                    params: [nextBlockTimestamp],
+                });
+
+                let lastLoanId = (await uloan.lastLoanId()) + 1;
+
+                await expect(uloan.connect(alice).requestLoan(valid_amount, valid_duration_in_days))
+                    .to.emit(uloan, "LoanRequested")
+                    .withArgs(lastLoanId, valid_amount, aliceCreditScore, valid_duration_in_days);
+
+                const aliceLoan = await uloan.loans(lastLoanId);
+                const durationInEpochs = valid_duration_in_days / ULOAN_EPOCH_IN_DAYS;
+
+                expect(aliceLoan.borrower).to.eq(alice.address);
+                expect(aliceLoan.creditScore).to.eq(aliceCreditScore);
+                expect(aliceLoan.lastActionTimestamp).to.eq(nextBlockTimestamp);
+                expect(aliceLoan.durationInDays).to.eq(valid_duration_in_days);
+                expect(aliceLoan.amountRequested).to.eq(valid_amount);
+                expect(aliceLoan.amountToRepay.gt(valid_amount)).to.be.true;
+                expect(aliceLoan.numberOfEpochsPaid).to.eq(0);
+                expect(aliceLoan.totalNumberOfEpochsToPay).to.eq(durationInEpochs);
+                // note: just like Solidity, ethers' BigNumber operations always return an interger, which is great.
+                // in this case, valid_amount/durationInEpochs (10000/12) should be 83.3333 but ethers returns 83 which matches the solidity values!
+                expect(aliceLoan.amountToRepayEveryEpoch).to.eq(ethers.BigNumber.from(valid_amount).div(durationInEpochs));
+                expect(aliceLoan.state).to.eq(ULOAN_STATES.Requested);
+                // uninitialized values for now
+                expect(aliceLoan.lenders).to.be.undefined;
+                expect(aliceLoan.matchMaker).to.eq(ethers.constants.AddressZero);
+            });
+
+            it("Create a loan with proper amount to repay", async () => {
+                // inputs:
+                //   x: ethers.BigNumber
+                //   basisPoints: JS number
+                // returns:
+                //   ethers.BigNumber
+                function _percentageOf(x, basisPoints) {
+                    return x.mul(basisPoints).div(10000);
+                }
+
+                await uloan.connect(alice).requestLoan(valid_amount, valid_duration_in_days);
+
+                const aliceLoan = await uloan.loans(1);
+
+                const amountRequested = aliceLoan.amountRequested;
+                const loanDurationInEpochs = valid_duration_in_days / ULOAN_EPOCH_IN_DAYS;
+                const aliceInterestRateForPeriod = await uloan._computeBorrowerInterestRateForPeriodInBasisPoint(aliceCreditScore, loanDurationInEpochs);
+                const amountToRepay = amountRequested.add(_percentageOf(amountRequested, aliceInterestRateForPeriod));
+
+                expect(aliceLoan.amountToRepay.eq(amountToRepay)).to.be.true;
             });
         });
     });

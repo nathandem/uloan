@@ -64,7 +64,7 @@ contract ULoan is Ownable {
     struct Loan {
         address borrower;
         uint8 creditScore;
-        uint256 lastActionTimestamp;  // versatile variable storing the timestamp of the block at which the last action took place. An action occurs everytime the loan changes its state, when it is Requested, Funded, BeingPaidBack (in this state, refer to `numberOfEpochsPaid` to get a sense of the progress in repayment of the loan - and of potential delay) and PayedBack.
+        uint256 lastActionTimestamp;  // versatile variable storing the timestamp of the block at which the last action took place. An action occurs everytime the loan changes its state, when it is Requested, Funded, BeingPaidBack (in this state, also refer to `numberOfEpochsPaid` to get a sense of the progress in repayment of the loan - and of potential delay) and PayedBack.
         uint16 durationInDays;
         uint256 amountRequested;
         uint256 amountToRepay;  // amountRequested + interests. Include the match maker and protocol fees
@@ -76,10 +76,10 @@ contract ULoan is Ownable {
         LoanState state;
         string closeReason;  // reason why the loan is Closed (to be sourced from an enum)
     }
-    uint256 lastLoanId;
+    uint256 public lastLoanId;
     mapping(uint256 => Loan) public loans;
-
     mapping(address => uint8) creditScores;
+
     mapping(address => uint256) matchMakerFees;
     uint256 ownerFees;
 
@@ -248,7 +248,6 @@ contract ULoan is Ownable {
 
         uint16 durationInEpochs = _durationInDays / ULOAN_EPOCH_IN_DAYS;
         uint256 amountToRepay = _amount + _percentageOf(_amount, _computeBorrowerInterestRateForPeriodInBasisPoint(borrowerCreditScore, durationInEpochs));
-        uint16 totalNumberOfEpochsToPay = _durationInDays / ULOAN_EPOCH_IN_DAYS;
 
         lastLoanId++;
         Loan storage newLoan = loans[lastLoanId];
@@ -259,8 +258,8 @@ contract ULoan is Ownable {
         newLoan.amountRequested = _amount;
         newLoan.amountToRepay = amountToRepay;
         newLoan.numberOfEpochsPaid = uint8(0);
-        newLoan.totalNumberOfEpochsToPay = totalNumberOfEpochsToPay;
-        newLoan.amountToRepayEveryEpoch = _amount / totalNumberOfEpochsToPay;
+        newLoan.totalNumberOfEpochsToPay = durationInEpochs;
+        newLoan.amountToRepayEveryEpoch = _amount / durationInEpochs;
         newLoan.state = LoanState.Requested;
 
         emit LoanRequested(lastLoanId, _amount, borrowerCreditScore, _durationInDays);
