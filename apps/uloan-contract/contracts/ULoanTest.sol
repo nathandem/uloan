@@ -22,7 +22,7 @@ contract ULoanTest is ULoan {
         return creditScores[_borrower];
     }
 
-    function __testOnly_changeLoanState(uint256 _loanId, ULoan.LoanState _newState) public {
+    function __testOnly_setLoanState(uint256 _loanId, ULoan.LoanState _newState) public {
         loans[_loanId].state = _newState;
     }
 }
