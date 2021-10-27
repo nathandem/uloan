@@ -29,6 +29,18 @@ describe("ULoan", () => {
     let MIN_LOCKUP_PERIOD_IN_DAYS;
     let MIN_RISK_LEVEL;
     let MAX_RISK_LEVEL;
+    let MIN_LOAN_DURATION_IN_DAYS;
+    let MAX_LOAN_DURATION_IN_DAYS;
+    let MIN_LOAN_AMOUNT;
+    let MAX_LOAN_AMOUNT;
+
+    // reminder: amounts are dealt with in wei-like denomination (18 decimal)
+    const valid_amount = ethers.utils.parseEther('1000').toString();
+    const valid_min_risk = 20;
+    const valid_max_risk = 60;
+    const valid_lock_period_in_days = 84;
+    const valid_credit_score = 50;
+    const valid_duration_in_days = valid_lock_period_in_days;
 
     async function _deploy_uloan() {
         stablecoinMock = await deployMockContract(owner, Stablecoin.abi);
@@ -50,6 +62,10 @@ describe("ULoan", () => {
         MIN_LOCKUP_PERIOD_IN_DAYS = await uloan.MIN_LOCKUP_PERIOD_IN_DAYS();
         MIN_RISK_LEVEL = await uloan.MIN_RISK_LEVEL();
         MAX_RISK_LEVEL = await uloan.MAX_RISK_LEVEL();
+        MIN_LOAN_DURATION_IN_DAYS = await uloan.MIN_LOAN_DURATION_IN_DAYS();
+        MAX_LOAN_DURATION_IN_DAYS = await uloan.MAX_LOAN_DURATION_IN_DAYS();
+        MIN_LOAN_AMOUNT = await uloan.MIN_LOAN_AMOUNT();
+        MAX_LOAN_AMOUNT = await uloan.MAX_LOAN_AMOUNT();
     });
 
     beforeEach(async () => {
@@ -63,13 +79,6 @@ describe("ULoan", () => {
     });
 
     describe("Lender operations", () => {
-        // lender inputs
-        // reminder: amounts are dealt with in wei-like denomination (18 decimal)
-        const valid_amount = ethers.utils.parseEther('1000').toString();
-        const valid_min_risk = 20;
-        const valid_max_risk = 60;
-        const valid_lock_period_in_days = 84;
-
         async function aliceDepositsFunds(amount, min_risk, max_risk, lock_period_in_days) {
             await stablecoinMock.mock.transferFrom.withArgs(alice.address, uloan.address, amount).returns(true);
             await uloan.connect(alice).depositCapital(amount, min_risk, max_risk, lock_period_in_days);
@@ -77,39 +86,39 @@ describe("ULoan", () => {
 
         describe("Common verifications", () => {
             it("Fails when max risk level under min risk level", async () => {
-                await expect(uloan.getReturnEstimateInBasisPoint(valid_amount, valid_max_risk, valid_min_risk, valid_lock_period_in_days)).to.be.revertedWith("The max risk level can't be smaller than the min risk level");
+                await expect(uloan.getReturnEstimateForPeriodInBasisPoint(valid_amount, valid_max_risk, valid_min_risk, valid_lock_period_in_days)).to.be.revertedWith("The max risk level can't be smaller than the min risk level");
                 await expect(uloan.depositCapital(valid_amount, valid_max_risk, valid_min_risk, valid_lock_period_in_days)).to.be.revertedWith("The max risk level can't be smaller than the min risk level");
             });
 
             it("Fails when minimum risk level provided under protocol's MIN_RISK_LEVEL", async () => {
-                await expect(uloan.getReturnEstimateInBasisPoint(valid_amount, MIN_RISK_LEVEL.sub(1), valid_max_risk, valid_lock_period_in_days)).to.be.revertedWith("The min risk level can't be smaller than MIN_RISK_LEVEL");
+                await expect(uloan.getReturnEstimateForPeriodInBasisPoint(valid_amount, MIN_RISK_LEVEL.sub(1), valid_max_risk, valid_lock_period_in_days)).to.be.revertedWith("The min risk level can't be smaller than MIN_RISK_LEVEL");
                 await expect(uloan.depositCapital(valid_amount, MIN_RISK_LEVEL.sub(1), valid_max_risk, valid_lock_period_in_days)).to.be.revertedWith("The min risk level can't be smaller than MIN_RISK_LEVEL");
             });
 
             it("Fails when maximum risk level provided above protocol's MAX_RISK_LEVEL", async () => {
-                await expect(uloan.getReturnEstimateInBasisPoint(valid_amount, valid_min_risk, MAX_RISK_LEVEL.add(1), valid_lock_period_in_days)).to.be.revertedWith("The max risk level can't be above MAX_RISK_LEVEL");
+                await expect(uloan.getReturnEstimateForPeriodInBasisPoint(valid_amount, valid_min_risk, MAX_RISK_LEVEL.add(1), valid_lock_period_in_days)).to.be.revertedWith("The max risk level can't be above MAX_RISK_LEVEL");
                 await expect(uloan.depositCapital(valid_amount, valid_min_risk, MAX_RISK_LEVEL.add(1), valid_lock_period_in_days)).to.be.revertedWith("The max risk level can't be above MAX_RISK_LEVEL");
             });
 
             it("Fails when lock-up period under protocol's MIN_LOCKUP_PERIOD_IN_DAYS", async () => {
-                await expect(uloan.getReturnEstimateInBasisPoint(valid_amount, valid_min_risk, valid_max_risk, 0)).to.be.revertedWith("The lock-up period can't be shorter than MIN_LOCKUP_PERIOD_IN_DAYS");
+                await expect(uloan.getReturnEstimateForPeriodInBasisPoint(valid_amount, valid_min_risk, valid_max_risk, 0)).to.be.revertedWith("The lock-up period can't be shorter than MIN_LOCKUP_PERIOD_IN_DAYS");
                 await expect(uloan.depositCapital(valid_amount, valid_min_risk, valid_max_risk, 0)).to.be.revertedWith("The lock-up period can't be shorter than MIN_LOCKUP_PERIOD_IN_DAYS");
             });
 
             it("Fails when lock-up period not a multiple of ULOAN_EPOCH_IN_DAYS", async () => {
-                await expect(uloan.getReturnEstimateInBasisPoint(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days + 1)).to.be.revertedWith("The lock-up period (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
+                await expect(uloan.getReturnEstimateForPeriodInBasisPoint(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days + 1)).to.be.revertedWith("The lock-up period (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
                 await expect(uloan.depositCapital(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days + 1)).to.be.revertedWith("The lock-up period (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
             });
 
             it("Fails when amount inferior than MIN_DEPOSIT_AMOUNT", async () => {
-                await expect(uloan.getReturnEstimateInBasisPoint(MIN_DEPOSIT_AMOUNT.sub(1), valid_min_risk, valid_max_risk, valid_lock_period_in_days)).to.be.revertedWith("The amount can't be lower than MIN_DEPOSIT_AMOUNT");
+                await expect(uloan.getReturnEstimateForPeriodInBasisPoint(MIN_DEPOSIT_AMOUNT.sub(1), valid_min_risk, valid_max_risk, valid_lock_period_in_days)).to.be.revertedWith("The amount can't be lower than MIN_DEPOSIT_AMOUNT");
                 await expect(uloan.depositCapital(MIN_DEPOSIT_AMOUNT.sub(1), valid_min_risk, valid_max_risk, valid_lock_period_in_days)).to.be.revertedWith("The amount can't be lower than MIN_DEPOSIT_AMOUNT");
             });
         });
 
         describe("Get estimated interest rates in basis point", () => {
             it("Give proper min and max interest rates when arguments are correct", async () => {
-                const [minRate, maxRate] = await uloan.getReturnEstimateInBasisPoint(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
+                const [minRate, maxRate] = await uloan.getReturnEstimateForPeriodInBasisPoint(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
                 expect(maxRate).to.be.greaterThan(minRate);
             });
 
@@ -259,6 +268,35 @@ describe("ULoan", () => {
 
                 bobCapitalProvidedAmountAvailable = (await uloan.capitalProviders(2)).amountAvailable;
                 expect(bobCapitalProvidedAmountAvailable).to.eq(valid_amount);
+            });
+        });
+    });
+
+    describe("Borrower operations", () => {
+        describe("Common verifications", () => {
+            it("Fails if loan duration under MIN_LOAN_DURATION_IN_DAYS", async () => {
+                await expect(uloan.getInterestEstimateForPeriodInBasisPoint(valid_amount, valid_credit_score, MIN_LOAN_DURATION_IN_DAYS - 1)).to.be.revertedWith("The loan period can't be shorter than MIN_LOAN_DURATION_IN_DAYS");
+                await expect(uloan.requestLoan(valid_amount, MIN_LOAN_DURATION_IN_DAYS - 1)).to.be.revertedWith("The loan period can't be shorter than MIN_LOAN_DURATION_IN_DAYS");
+            });
+
+            it("Fails if loan duration above MAX_LOAN_DURATION_IN_DAYS", async () => {
+                await expect(uloan.getInterestEstimateForPeriodInBasisPoint(valid_amount, valid_credit_score, MAX_LOAN_DURATION_IN_DAYS + 1)).to.be.revertedWith("The loan period can't be longer than MAX_LOAN_DURATION_IN_DAYS");
+                await expect(uloan.requestLoan(valid_amount, MAX_LOAN_DURATION_IN_DAYS + 1)).to.be.revertedWith("The loan period can't be longer than MAX_LOAN_DURATION_IN_DAYS");
+            });
+
+            it("Fails if loan duration not a multiple of ULOAN_EPOCH_IN_DAYS", async () => {
+                await expect(uloan.getInterestEstimateForPeriodInBasisPoint(valid_amount, valid_credit_score, valid_duration_in_days + 1)).to.be.revertedWith("The loan duration (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
+                await expect(uloan.requestLoan(valid_amount, valid_duration_in_days + 1)).to.be.revertedWith("The loan duration (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
+            });
+
+            it("Fails if loan amount below MIN_LOAN_AMOUNT", async () => {
+                await expect(uloan.getInterestEstimateForPeriodInBasisPoint(MIN_LOAN_AMOUNT.sub(1), valid_credit_score, valid_duration_in_days)).to.be.revertedWith("The amount can't be lower than MIN_LOAN_AMOUNT");
+                await expect(uloan.requestLoan(MIN_LOAN_AMOUNT.sub(1), valid_duration_in_days)).to.be.revertedWith("The amount can't be lower than MIN_LOAN_AMOUNT");
+            });
+
+            it("Fails if loan amount above MAX_LOAN_AMOUNT", async () => {
+                await expect(uloan.getInterestEstimateForPeriodInBasisPoint(MAX_LOAN_AMOUNT.add(1), valid_credit_score, valid_duration_in_days)).to.be.revertedWith("The amount can't be above than MAX_LOAN_AMOUNT");
+                await expect(uloan.requestLoan(MAX_LOAN_AMOUNT.add(1), valid_duration_in_days)).to.be.revertedWith("The amount can't be above than MAX_LOAN_AMOUNT");
             });
         });
     });

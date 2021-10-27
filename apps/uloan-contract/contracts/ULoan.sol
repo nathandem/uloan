@@ -25,6 +25,7 @@ contract ULoan is Ownable {
     uint256 public MAX_RISK_LEVEL = 100;
 
     uint256 public MIN_LOAN_AMOUNT = MIN_DEPOSIT_AMOUNT;  // arbitrary value to be debated
+    uint256 public MAX_LOAN_AMOUNT = MIN_DEPOSIT_AMOUNT * 10e6;  // arbitrary value to be debated
     uint256 public MIN_LOAN_DURATION_IN_DAYS = ULOAN_EPOCH_IN_DAYS;  // arbitrary value to be debated
     uint256 public MAX_LOAN_DURATION_IN_DAYS = ULOAN_EPOCH_IN_DAYS * 52;  // arbitrary value to be debated
 
@@ -115,7 +116,7 @@ contract ULoan is Ownable {
      * is matched with a shorter loan. Yet, we should add that, if that's the case, he can leave his capital on the protocol
      * to have his funds roll to another loan.
      */
-    function getReturnEstimateInBasisPoint(
+    function getReturnEstimateForPeriodInBasisPoint(
         uint256 _amount,
         uint8 _minRiskLevel,
         uint8 _maxRiskLevel,
@@ -217,12 +218,16 @@ contract ULoan is Ownable {
      *
      * Important note: the amount is returned in centile.
      */
-    function getInterestEstimateInBasisPoint(uint256 _amount, uint8 _creditScore, uint16 _durationInDays) public view returns (uint16) {
-        require(_durationInDays >= MIN_LOAN_DURATION_IN_DAYS, "The lock-up period can't be shorter than MIN_LOAN_DURATION_IN_DAYS");
-        require(_durationInDays <= MAX_LOAN_DURATION_IN_DAYS, "The lock-up period can't be longer than MAX_LOAN_DURATION_IN_DAYS");
-        require(_durationInDays % ULOAN_EPOCH_IN_DAYS == 0, "The loan duration (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
-        require(_amount >= MIN_LOAN_AMOUNT, "The amount can't be lower than MIN_LOAN_AMOUNT");
-
+    function getInterestEstimateForPeriodInBasisPoint(
+        uint256 _amount,
+        uint8 _creditScore,
+        uint16 _durationInDays
+    )
+        public
+        view
+        lendingChecks(_amount, _durationInDays)
+        returns (uint16)
+    {
         return _computeBorrowerInterestRateForPeriodInBasisPoint(_creditScore, (_durationInDays / ULOAN_EPOCH_IN_DAYS));
     }
 
@@ -230,13 +235,15 @@ contract ULoan is Ownable {
      * Initiate a loan request, which then needs to be matched with provided capital.
      * Emit an event that any service looking to perform matching for the protocol can listen to.
      */
-    function requestLoan(uint256 _amount, uint16 _durationInDays) public {
+    function requestLoan(
+        uint256 _amount,
+        uint16 _durationInDays
+    )
+        public
+        lendingChecks(_amount, _durationInDays)
+    {
         uint8 borrowerCreditScore = creditScores[msg.sender];
         require(borrowerCreditScore > 0, "You must have a credit score to request a loan. Get one first!");
-        require(_durationInDays >= MIN_LOAN_DURATION_IN_DAYS, "The lock-up period can't be shorter than MIN_LOAN_DURATION_IN_DAYS");
-        require(_durationInDays <= MAX_LOAN_DURATION_IN_DAYS, "The lock-up period can't be longer than MAX_LOAN_DURATION_IN_DAYS");
-        require(_durationInDays % ULOAN_EPOCH_IN_DAYS == 0, "The loan duration (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
-        require(_amount >= MIN_LOAN_AMOUNT, "The amount can't be lower than MIN_LOAN_AMOUNT");
 
         uint16 durationInEpochs = _durationInDays / ULOAN_EPOCH_IN_DAYS;
         uint256 amountToRepay = _amount + _percentageOf(_amount, _computeBorrowerInterestRateForPeriodInBasisPoint(borrowerCreditScore, durationInEpochs));
@@ -414,6 +421,18 @@ contract ULoan is Ownable {
         require(_maxRiskLevel <= MAX_RISK_LEVEL, "The max risk level can't be above MAX_RISK_LEVEL");
         require(_lockUpPeriodInDays >= MIN_LOCKUP_PERIOD_IN_DAYS, "The lock-up period can't be shorter than MIN_LOCKUP_PERIOD_IN_DAYS");
         require(_lockUpPeriodInDays % ULOAN_EPOCH_IN_DAYS == 0, "The lock-up period (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
+        _;
+    }
+
+    modifier lendingChecks(
+        uint256 _amount,
+        uint16 _durationInDays
+    ) {
+        require(_durationInDays >= MIN_LOAN_DURATION_IN_DAYS, "The loan period can't be shorter than MIN_LOAN_DURATION_IN_DAYS");
+        require(_durationInDays <= MAX_LOAN_DURATION_IN_DAYS, "The loan period can't be longer than MAX_LOAN_DURATION_IN_DAYS");
+        require(_durationInDays % ULOAN_EPOCH_IN_DAYS == 0, "The loan duration (in days) must be a multiple of ULOAN_EPOCH_IN_DAYS");
+        require(_amount >= MIN_LOAN_AMOUNT, "The amount can't be lower than MIN_LOAN_AMOUNT");
+        require(_amount <= MAX_LOAN_AMOUNT, "The amount can't be above than MAX_LOAN_AMOUNT");
         _;
     }
 
