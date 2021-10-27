@@ -128,10 +128,10 @@ contract ULoan is Ownable {
         returns (uint16, uint16)
     {
         uint16 durationInEpochs = _lockUpPeriodInDays / ULOAN_EPOCH_IN_DAYS;
-        uint16 minInterestRateInBasisPoint = _computeLenderInterestRateForPeriodInBasisPoint(_minRiskLevel, durationInEpochs);
-        uint16 maxInterestRateInBasisPoint = _computeLenderInterestRateForPeriodInBasisPoint(_maxRiskLevel, durationInEpochs);
+        uint16 minInterestRateForPeriodInBasisPoint = _computeLenderInterestRateForPeriodInBasisPoint(_minRiskLevel, durationInEpochs);
+        uint16 maxInterestRateForPeriodInBasisPoint = _computeLenderInterestRateForPeriodInBasisPoint(_maxRiskLevel, durationInEpochs);
 
-        return (minInterestRateInBasisPoint, maxInterestRateInBasisPoint);
+        return (minInterestRateForPeriodInBasisPoint, maxInterestRateForPeriodInBasisPoint);
     }
 
     /*
@@ -361,16 +361,16 @@ contract ULoan is Ownable {
 
             // Check lender has enough capital, risk tolerance and duration
             require(loanCapitalProvider.amountAvailable >= _capitalProviderAmounts[i], "One or more of the capital providers doesn't have enough capital to fund the loan in the proportion proposed");
-            require(loanCapitalProvider.minRiskLevel >= _creditScoreToRiskLevel(loan.creditScore), "The credit score of the loan's borrower is too high for the lender (loan not aggressive enough)");
-            require(loanCapitalProvider.maxRiskLevel <= _creditScoreToRiskLevel(loan.creditScore), "The credit score of the loan's borrower is too low for the lender (loan too risk)");
+            require(loanCapitalProvider.minRiskLevel >= _creditScoreToRiskLevel(loan.creditScore), "The credit score of the loan's borrower is too high for one or more of the lender (loan not aggressive enough)");
+            require(loanCapitalProvider.maxRiskLevel <= _creditScoreToRiskLevel(loan.creditScore), "The credit score of the loan's borrower is too low for one or more of the lender (loan too risky)");
             require(loanCapitalProvider.lockUpPeriodInDays >= loan.durationInDays, "One or more of the capital providers lock up period isn't high enough to match that of the loan");
 
             // If the checks pass, reflect the matching of the capital with the loan in the capitalProvider and the loan
             uint16 durationInEpochs = loan.durationInDays / ULOAN_EPOCH_IN_DAYS;
-            uint16 lenderInterestRateInBasisPoint = _computeLenderInterestRateForPeriodInBasisPoint(_creditScoreToRiskLevel(loan.creditScore), durationInEpochs);
+            uint16 lenderInterestRateForPeriodInBasisPoint = _computeLenderInterestRateForPeriodInBasisPoint(_creditScoreToRiskLevel(loan.creditScore), durationInEpochs);
             uint256 totalAmountToGetBack = (
                 _capitalProviderAmounts[i]
-                + _percentageOf(_capitalProviderAmounts[i], lenderInterestRateInBasisPoint)
+                + _percentageOf(_capitalProviderAmounts[i], lenderInterestRateForPeriodInBasisPoint)
             );
 
             // Adjust the capital provider side of the matching
@@ -457,9 +457,9 @@ contract ULoan is Ownable {
     }
 
     function _computeLenderInterestRateForPeriodInBasisPoint(uint8 _riskLevel, uint16 _durationInEpochs) public view returns (uint16) {
-        uint16 borrowerRateInBasisPoint = _computeBorrowerInterestRateForPeriodInBasisPoint(_riskLevelToCreditScore(_riskLevel), _durationInEpochs);
+        uint16 borrowerRateForPeriodInBasisPoint = _computeBorrowerInterestRateForPeriodInBasisPoint(_riskLevelToCreditScore(_riskLevel), _durationInEpochs);
 
-        return borrowerRateInBasisPoint - FEE_BP;
+        return borrowerRateForPeriodInBasisPoint - FEE_BP;
     }
 
     function _creditScoreToRiskLevel(uint8 _creditScore) public pure returns (uint8) {
