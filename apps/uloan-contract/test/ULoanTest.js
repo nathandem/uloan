@@ -9,10 +9,20 @@ const Stablecoin = require('../artifacts/contracts/Stablecoin.sol/Stablecoin.jso
 const ULOAN_STATES = {
     Requested: 0,
     Funded: 1,
-    BeingPaidBack: 2,
-    PayedBack: 3,
-    Closed: 4
+    Withdrawn: 2,
+    BeingPaidBack: 3,
+    PayedBack: 4,
+    Closed: 5
 }
+
+// reminder: amounts are dealt with in wei-like denomination (18 decimal)
+const valid_amount = ethers.utils.parseEther('1000').toString();
+const valid_min_risk = 20;
+const valid_max_risk = 60;
+const valid_lock_period_in_days = 84;
+const valid_credit_score = 50;
+const valid_duration_in_days = valid_lock_period_in_days;
+const alice_credit_score = 80;
 
 // see ULoanTest to understand why ULoan is tested through ULoanTest
 describe("ULoanTest", () => {
@@ -34,14 +44,6 @@ describe("ULoanTest", () => {
     let MAX_LOAN_DURATION_IN_DAYS;
     let MIN_LOAN_AMOUNT;
     let MAX_LOAN_AMOUNT;
-
-    // reminder: amounts are dealt with in wei-like denomination (18 decimal)
-    const valid_amount = ethers.utils.parseEther('1000').toString();
-    const valid_min_risk = 20;
-    const valid_max_risk = 60;
-    const valid_lock_period_in_days = 84;
-    const valid_credit_score = 50;
-    const valid_duration_in_days = valid_lock_period_in_days;
 
     async function _deploy_uloan() {
         stablecoinMock = await deployMockContract(owner, Stablecoin.abi);
@@ -321,11 +323,9 @@ describe("ULoanTest", () => {
         });
 
         describe("Request a loan", () => {
-            const aliceCreditScore = 80;
-
             // needs to beforeEach because contract is deployed between every individual test
             beforeEach(async () => {
-                await uloan.__testOnly_setBorrowerCreditScore(alice.address, aliceCreditScore);
+                await uloan.__testOnly_setBorrowerCreditScore(alice.address, alice_credit_score);
             });
 
             it("Fails if the borrower has no credit score", async () => {
@@ -343,13 +343,13 @@ describe("ULoanTest", () => {
 
                 await expect(uloan.connect(alice).requestLoan(valid_amount, valid_duration_in_days))
                     .to.emit(uloan, "LoanRequested")
-                    .withArgs(lastLoanId, valid_amount, aliceCreditScore, valid_duration_in_days);
+                    .withArgs(lastLoanId, valid_amount, alice_credit_score, valid_duration_in_days);
 
                 const aliceLoan = await uloan.loans(lastLoanId);
                 const durationInEpochs = valid_duration_in_days / ULOAN_EPOCH_IN_DAYS;
 
                 expect(aliceLoan.borrower).to.eq(alice.address);
-                expect(aliceLoan.creditScore).to.eq(aliceCreditScore);
+                expect(aliceLoan.creditScore).to.eq(alice_credit_score);
                 expect(aliceLoan.lastActionTimestamp).to.eq(nextBlockTimestamp);
                 expect(aliceLoan.durationInDays).to.eq(valid_duration_in_days);
                 expect(aliceLoan.amountRequested).to.eq(valid_amount);
@@ -381,10 +381,40 @@ describe("ULoanTest", () => {
 
                 const amountRequested = aliceLoan.amountRequested;
                 const loanDurationInEpochs = valid_duration_in_days / ULOAN_EPOCH_IN_DAYS;
-                const aliceInterestRateForPeriod = await uloan._computeBorrowerInterestRateForPeriodInBasisPoint(aliceCreditScore, loanDurationInEpochs);
+                const aliceInterestRateForPeriod = await uloan._computeBorrowerInterestRateForPeriodInBasisPoint(alice_credit_score, loanDurationInEpochs);
                 const amountToRepay = amountRequested.add(_percentageOf(amountRequested, aliceInterestRateForPeriod));
 
                 expect(aliceLoan.amountToRepay.eq(amountToRepay)).to.be.true;
+            });
+        });
+
+        describe("Withdraw funds from loan after it is funded", () => {
+            beforeEach(async () => {
+                await uloan.__testOnly_setBorrowerCreditScore(alice.address, alice_credit_score);
+                await uloan.connect(alice).requestLoan(valid_amount, valid_duration_in_days);
+                await uloan.__testOnly_changeLoanState(1, ULOAN_STATES.Funded);
+                await stablecoinMock.mock.transfer.withArgs(alice.address, valid_amount).returns(true);
+            });
+
+            it("Fails when one tries to withdraw funds from loan he/she didn't initiate", async () => {
+                await expect(uloan.connect(bob).withdrawLoanFunds(1)).to.revertedWith("You cannot withdraw funds from a loan you didn't initiate");
+            });
+
+            it("Fails when loan isn't funded yet", async () => {
+                await uloan.__testOnly_changeLoanState(1, ULOAN_STATES.Requested);
+                await expect(uloan.connect(alice).withdrawLoanFunds(1)).to.revertedWith("The loan must be funded to be withdrawn");
+            });
+
+            it("Fails when transfer of funds from ULoan to the borrower fails", async () => {
+                await stablecoinMock.mock.transfer.withArgs(alice.address, valid_amount).returns(false);
+                await expect(uloan.connect(alice).withdrawLoanFunds(1)).to.revertedWith("The transfer of funds failed");
+            });
+
+            it("Transfer funds from ULoan to borrower and change loan status to Withdrawn", async () => {
+                await expect(uloan.connect(alice).withdrawLoanFunds(1)).to.emit(uloan, "LoanWithdrawn").withArgs(1);
+
+                const aliceLoan = await uloan.loans(1);
+                expect(aliceLoan.state).to.eq(ULOAN_STATES.Withdrawn);
             });
         });
     });

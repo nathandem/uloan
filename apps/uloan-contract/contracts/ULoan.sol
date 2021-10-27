@@ -57,10 +57,10 @@ contract ULoan is Ownable {
     struct Lender {
         uint256 lenderId;  // the key to find the `CapitalProvider` struct in `capitalProviders`
         uint256 amountContributed;  // constant, won't change over time
-        uint256 totalAmountToGetBack;  // (amountContributed + interests) - (matcher fee + protocol fee)
+        uint256 totalAmountToGetBack;  // constant = (amountContributed + interests) - (matcher fee + protocol fee)
         uint256 amountPaidBack;  // variable, grows as the borrower pays back the loans+interests
     }
-    enum LoanState { Requested, Funded, BeingPaidBack, PayedBack, Closed }
+    enum LoanState { Requested, Funded, Withdrawn, BeingPaidBack, PayedBack, Closed }
     struct Loan {
         address borrower;
         uint8 creditScore;
@@ -268,13 +268,13 @@ contract ULoan is Ownable {
     function withdrawLoanFunds(uint256 _loanId) public {
         Loan storage loan = loans[_loanId];
 
-        require(loan.borrower == msg.sender, "You cannot withdraw funds from a funds you didn't initiate");
+        require(loan.borrower == msg.sender, "You cannot withdraw funds from a loan you didn't initiate");
         require(loan.state == LoanState.Funded, "The loan must be funded to be withdrawn");
 
         bool success = stablecoin.transfer(loan.borrower, loan.amountRequested);
         require(success, "The transfer of funds failed");
 
-        loan.state = LoanState.BeingPaidBack;
+        loan.state = LoanState.Withdrawn;
 
         emit LoanWithdrawn(_loanId);
     }
@@ -294,10 +294,14 @@ contract ULoan is Ownable {
         Loan storage loan = loans[_loanId];
 
         require(loan.borrower == msg.sender, "Loans should be paid back by those who initiate them");
-        require(loan.state == LoanState.BeingPaidBack, "The loan is ready for repayment yet");
+        require((loan.state == LoanState.Withdrawn || loan.state == LoanState.BeingPaidBack), "The loan is not ready for repayment yet");
 
         bool success = stablecoin.transferFrom(msg.sender, address(this), loan.amountToRepayEveryEpoch);
         require(success, "The transfer of funds failed, do you have enough funds approved for transfer to the protocol?");
+
+        if (loan.state == LoanState.Withdrawn) {
+            loan.state = LoanState.BeingPaidBack;
+        }
 
         loan.lastActionTimestamp = block.timestamp;
         loan.numberOfEpochsPaid = loan.numberOfEpochsPaid + 1;
@@ -334,15 +338,16 @@ contract ULoan is Ownable {
      * a valid match and get a fee/percentage of the interest of the loan.
      */
     function matchLoanWithCapital(
-        uint[] calldata _capitalProviderIds,
-        uint[] calldata _capitalProviderAmounts,
-        uint _loanId
+        uint256[] calldata _capitalProviderIds,
+        uint256[] calldata _capitalProviderAmounts,
+        uint256 _loanId
     ) external {
         Loan storage loan = loans[_loanId];
 
-        // Initial verications
+        // Initial checks
         require(loan.state == LoanState.Requested, "Only requested loans can be matched");
         require(_capitalProviderIds.length == _capitalProviderAmounts.length, "The length of the provided arguments doesn't match");
+        require(_capitalProviderIds.length > 0, "More than capital provider must be sent");
 
         uint256 sumOfAmounts;
         for (uint256 i = 0; i < _capitalProviderAmounts.length; i++) {

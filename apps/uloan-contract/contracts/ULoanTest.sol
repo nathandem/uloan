@@ -12,9 +12,7 @@ import "./ULoan.sol";
  * `view` functions.
  */
 contract ULoanTest is ULoan {
-    constructor(
-        address _stablecoin
-    ) ULoan(_stablecoin) {}
+    constructor(address _stablecoin) ULoan(_stablecoin) {}
 
     function __testOnly_setBorrowerCreditScore(address _borrower, uint8 _creditScore) public {
         creditScores[_borrower] = _creditScore;
@@ -22,5 +20,9 @@ contract ULoanTest is ULoan {
 
     function __testOnly_getBorrowerCreditScore(address _borrower) public view returns(uint8) {
         return creditScores[_borrower];
+    }
+
+    function __testOnly_changeLoanState(uint256 _loanId, ULoan.LoanState _newState) public {
+        loans[_loanId].state = _newState;
     }
 }
