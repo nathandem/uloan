@@ -78,7 +78,14 @@ describe("ULoanTest", () => {
         await uloan.deployed();
     }
 
-    async function signerDepositCapital(
+    async function _setNextBlockTimestamp(nextBlockTimestamp) {
+        await hre.network.provider.request({
+            method: "evm_setNextBlockTimestamp",
+            params: [nextBlockTimestamp],
+        });
+    }
+
+    async function _signerDepositCapital(
         signer,
         amount = valid_amount,
         minRisk = valid_min_risk,
@@ -89,7 +96,7 @@ describe("ULoanTest", () => {
         await uloan.connect(signer).depositCapital(amount, minRisk, maxRisk, lockUpPeriodInDays);
     }
 
-    async function signerCreateLoan(
+    async function _signerCreateLoan(
         signer,
         amount = valid_amount,
         creditScore = valid_credit_score,
@@ -205,7 +212,7 @@ describe("ULoanTest", () => {
             it.skip("Fails if lender has currently no available capital to withdraw", async () => {});
 
             it("In case of success, all of the capital available of an user is withdrawn", async () => {
-                await signerDepositCapital(alice);
+                await _signerDepositCapital(alice);
 
                 let aliceCapitalProvided;
                 aliceCapitalProvided = await uloan.capitalProviders(1);
@@ -220,8 +227,8 @@ describe("ULoanTest", () => {
             });
 
             it("In case of success, all the capital provided is withdrawn", async () => {
-                await signerDepositCapital(alice);
-                await signerDepositCapital(alice);
+                await _signerDepositCapital(alice);
+                await _signerDepositCapital(alice);
 
                 // bob deposits as well but his amount shouldn't be affected
                 await stablecoinMock.mock.transferFrom.withArgs(bob.address, uloan.address, valid_amount).returns(true);
@@ -252,14 +259,14 @@ describe("ULoanTest", () => {
             });
 
             it("Fails if capital wasn't provided by lender in the first place", async () => {
-                await signerDepositCapital(alice);
+                await _signerDepositCapital(alice);
 
                 await expect(uloan.connect(bob).recoupCapitalPerCapitalProvided(1))
                     .to.be.revertedWith("You can't withdraw funds you didn't provide in the first place");
             });
 
             it("Fails if ERC20 transfer of funds failed", async () => {
-                await signerDepositCapital(alice);
+                await _signerDepositCapital(alice);
 
                 await stablecoinMock.mock.transfer.withArgs(alice.address, valid_amount).returns(false);
                 await expect(uloan.connect(alice).recoupCapitalPerCapitalProvided(1))
@@ -267,7 +274,7 @@ describe("ULoanTest", () => {
             });
 
             it("Withdraws the capital provider of the lender if all conditions are met and set the value to 0", async () => {
-                await signerDepositCapital(alice);
+                await _signerDepositCapital(alice);
 
                 let aliceCapitalProvidedAmountAvailable;
                 aliceCapitalProvidedAmountAvailable = (await uloan.capitalProviders(1)).amountAvailable;
@@ -280,7 +287,7 @@ describe("ULoanTest", () => {
             });
 
             it("Doesn't affect other capital provider structs of the lender (and other lenders)", async () => {
-                await signerDepositCapital(alice);
+                await _signerDepositCapital(alice);
 
                 // bob deposits as well but his amount shouldn't be affected
                 await stablecoinMock.mock.transferFrom.withArgs(bob.address, uloan.address, valid_amount).returns(true);
@@ -353,10 +360,7 @@ describe("ULoanTest", () => {
 
             it("Creates a loan without lenders and emit an event about it when credit score exist", async () => {
                 const nextBlockTimestamp = 2627657056;
-                await hre.network.provider.request({
-                    method: "evm_setNextBlockTimestamp",
-                    params: [nextBlockTimestamp],
-                });
+                await _setNextBlockTimestamp(nextBlockTimestamp);
 
                 let lastLoanId = (await uloan.lastLoanId()) + 1;
 
@@ -414,7 +418,7 @@ describe("ULoanTest", () => {
 
         describe("Withdraw funds from loan after it is funded", () => {
             beforeEach(async () => {
-                await signerCreateLoan(alice);
+                await _signerCreateLoan(alice);
                 await uloan.__testOnly_setLoanState(1, ULOAN_STATES.Funded);
                 await stablecoinMock.mock.transfer.withArgs(alice.address, valid_amount).returns(true);
             });
@@ -442,14 +446,14 @@ describe("ULoanTest", () => {
         });
     });
 
-    describe("Match loan with available capital", () => {
+    describe("Match loan with proposed capital", () => {
         beforeEach(async () => {
             // create 1 loan
-            await signerCreateLoan(alice, valid_amount.mul(2));
+            await _signerCreateLoan(alice, valid_amount.mul(2));
 
             // create 2 capital providers, the combination of both matches the amount asked by Alice's loan
-            await signerDepositCapital(bob);
-            await signerDepositCapital(charles);
+            await _signerDepositCapital(bob);
+            await _signerDepositCapital(charles);
         });
 
         describe("Checks", () => {
@@ -494,7 +498,7 @@ describe("ULoanTest", () => {
 
             it("Fails if one or more of the capital providers don't have enough fund to participate as proposed", async () => {
                 const amountBelowRequirementForMatch = ethers.utils.parseEther('100');
-                await signerDepositCapital(bob, amountBelowRequirementForMatch);
+                await _signerDepositCapital(bob, amountBelowRequirementForMatch);
 
                 await expect(uloan.matchLoanWithCapital(
                     [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
@@ -502,7 +506,7 @@ describe("ULoanTest", () => {
             });
 
             it("Fails if the risk level of the loan is too low for one or more of the proposed capital providers", async () => {
-                await signerDepositCapital(bob, valid_amount, 80, MAX_RISK_LEVEL);
+                await _signerDepositCapital(bob, valid_amount, 80, MAX_RISK_LEVEL);
 
                 await expect(uloan.matchLoanWithCapital(
                     [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
@@ -510,7 +514,7 @@ describe("ULoanTest", () => {
             });
 
             it("Fails if the risk level of the loan is too high for one or more of the proposed capital providers", async () => {
-                await signerDepositCapital(bob, valid_amount, MIN_RISK_LEVEL, 40);
+                await _signerDepositCapital(bob, valid_amount, MIN_RISK_LEVEL, 40);
 
                 await expect(uloan.matchLoanWithCapital(
                     [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
@@ -518,11 +522,81 @@ describe("ULoanTest", () => {
             });
 
             it("Fails if the duration of the loan is too high for the lock-up period of one or more of the proposed capital providers", async () => {
-                await signerDepositCapital(bob, valid_amount, valid_min_risk, valid_max_risk, MIN_LOCKUP_PERIOD_IN_DAYS);
+                await _signerDepositCapital(bob, valid_amount, valid_min_risk, valid_max_risk, MIN_LOCKUP_PERIOD_IN_DAYS);
 
                 await expect(uloan.matchLoanWithCapital(
                     [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
                 )).to.be.revertedWith("One or more of the capital providers lock up period aren't high enough to match that of the loan");
+            });
+        });
+
+        describe("Core logic", () => {
+            it("Should emit LoanMatchedWithCapital when the loan is matched with capital", async () => {
+                await expect(uloan.matchLoanWithCapital(
+                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
+                    1
+                )).to.emit(uloan, "LoanMatchedWithCapital").withArgs(1);
+            });
+
+            it("Should adjust the accepted capital provider states (attach the loanId and reduce their amounts available)", async () => {
+                await uloan.matchLoanWithCapital(
+                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
+                    1
+                );
+
+                for (capitalProviderId of [1, 2]) {
+                    expect((await uloan.capitalProviders(capitalProviderId)).amountAvailable).to.eq(0);  // valid_amount - valid_amount
+                    expect((await uloan.getCapitalProviderFundedLoanId(capitalProviderId, 0))).to.eq(1);  // `1` refers the id of the loan created in `beforeEach`
+                }
+            });
+
+            it("Should adjust the loan state, in particular by adding the capital providers that funded it", async () => {
+                const nextBlockTimestamp = 2627657056;
+                await _setNextBlockTimestamp(nextBlockTimestamp);
+
+                await uloan.matchLoanWithCapital(
+                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
+                    1
+                );
+
+                const loan = await uloan.loans(1);
+                expect(loan.state).to.eq(ULOAN_STATES.Funded);
+                expect(loan.lastActionTimestamp).to.eq(nextBlockTimestamp);
+                expect(loan.matchMaker).to.eq(owner.address);
+
+                expect((await uloan.getLoanLendersLength(1))).to.eq(2);
+
+                let loanLender;
+                // check the first lender struct attached to the loan
+                loanLender = await uloan.getLoanLender(1, 0);
+                expect(loanLender.lenderId).to.eq(1);  // as it's visible in the call to matchLoanWithCapital above, the capital provider with id 1 is inserted first
+                expect(loanLender.amountContributed).to.eq(valid_amount);
+                expect(loanLender.totalAmountToGetBack.gt(valid_amount)).to.be.true;
+                expect(loanLender.amountPaidBack).to.eq(0);
+
+                // check the second lender struct attached to the loan
+                loanLender = await uloan.getLoanLender(1, 1);
+                expect(loanLender.lenderId).to.eq(2);
+                expect(loanLender.amountContributed).to.eq(valid_amount);
+                expect(loanLender.totalAmountToGetBack.gt(valid_amount)).to.be.true;
+                expect(loanLender.amountPaidBack).to.eq(0);
+            });
+
+            it("Amounts should add up to total: loan's amountToRepay = sum of lender's totalAmountToGetBack + matchMakerFee + protocolOwnerFee", async () => {
+                await uloan.matchLoanWithCapital(
+                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
+                    1
+                );
+                const loanId = 1;
+
+                const firstLenderTotalAmountToGetBack = (await uloan.getLoanLender(loanId, 0)).totalAmountToGetBack;
+                const secondLenderTotalAmountToGetBack = (await uloan.getLoanLender(loanId, 1)).totalAmountToGetBack;
+                const lendersTotalAmountToGetBack = firstLenderTotalAmountToGetBack.add(secondLenderTotalAmountToGetBack);
+
+                const loan = await uloan.loans(loanId);
+                const totalAmountClaimed = lendersTotalAmountToGetBack.add(loan.matchMakerFee).add(loan.protocolOwnerFee);
+
+                expect(loan.amountToRepay.eq(totalAmountClaimed)).to.be.true;
             });
         });
     });

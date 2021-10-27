@@ -47,7 +47,7 @@ contract ULoan is Ownable {
         uint16 lockUpPeriodInDays;  // constant used for loan matching, giving the max number of days that the funds can be locked in a loan
         uint256 amountProvided;  // constant value, this value won't ever change. New deposits by existing lenders leads to the creation of new CapitalProvider structs
         uint256 amountAvailable;  // at the beginning, amountAvailable == amountProvided, but it will change over time because 1) funds will be lent, 2) interests will be earnt, 3) lender will recoup some or all of this amount
-        uint256[] fundedLoanIds;
+        uint256[] fundedLoanIds;  // note: not included in the `public` getter (`capitalProviders`), hence `getCapitalProviderFundedLoanIdsLength` and `getCapitalProviderFundedLoanId`
     }
     uint256 public lastCapitalProviderId;
     mapping(uint256 => CapitalProvider) public capitalProviders;
@@ -500,5 +500,23 @@ contract ULoan is Ownable {
         require(lenderCapitalProvided.length > 0, "No capital provided by this account");
 
         return lenderCapitalProvided;
+    }
+
+    // GETTER FUNCTIONS
+
+    function getCapitalProviderFundedLoanIdsLength(uint256 _capitalProviderId) public view returns(uint256) {
+        return capitalProviders[_capitalProviderId].fundedLoanIds.length;
+    }
+
+    function getCapitalProviderFundedLoanId(uint256 _capitalProviderId, uint256 _loanIndex) public view returns(uint256) {
+        return capitalProviders[_capitalProviderId].fundedLoanIds[_loanIndex];
+    }
+
+    function getLoanLendersLength(uint256 _loanId) public view returns(uint256) {
+        return loans[_loanId].lenders.length;
+    }
+
+    function getLoanLender(uint256 _loanId, uint256 _lenderIndex) public view returns(Lender memory) {
+        return loans[_loanId].lenders[_lenderIndex];
     }
 }
