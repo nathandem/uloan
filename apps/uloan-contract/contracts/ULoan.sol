@@ -228,7 +228,8 @@ contract ULoan is Ownable {
         lendingChecks(_amount, _durationInDays)
         returns (uint16)
     {
-        return _computeBorrowerInterestRateForPeriodInBasisPoint(_creditScore, (_durationInDays / ULOAN_EPOCH_IN_DAYS));
+        uint16 durationInEpochs = _durationInDays / ULOAN_EPOCH_IN_DAYS;
+        return _computeBorrowerInterestRateForPeriodInBasisPoint(_creditScore, durationInEpochs);
     }
 
     /*

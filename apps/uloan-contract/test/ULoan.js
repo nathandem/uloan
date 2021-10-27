@@ -299,6 +299,25 @@ describe("ULoan", () => {
                 await expect(uloan.requestLoan(MAX_LOAN_AMOUNT.add(1), valid_duration_in_days)).to.be.revertedWith("The amount can't be above than MAX_LOAN_AMOUNT");
             });
         });
+
+        describe("Get interest rate estimation for period", () => {
+            it("Should return a valid borrower interest rate", async () => {
+                let value;
+
+                // values are similar to what's computed below in "Should return a valid borrower interest rate"
+                value = await uloan.getInterestEstimateForPeriodInBasisPoint(valid_amount, 50, ULOAN_EPOCH_IN_DAYS * 4);
+                expect(value).to.eq(808);
+
+                value = await uloan.getInterestEstimateForPeriodInBasisPoint(valid_amount, 80, ULOAN_EPOCH_IN_DAYS * 4);
+                expect(value).to.eq(508);
+
+                value = await uloan.getInterestEstimateForPeriodInBasisPoint(valid_amount, 50, ULOAN_EPOCH_IN_DAYS * 52);
+                expect(value).to.eq(904);
+
+                value = await uloan.getInterestEstimateForPeriodInBasisPoint(valid_amount, 30, ULOAN_EPOCH_IN_DAYS * 52);
+                expect(value).to.eq(1104);
+            });
+        });
     });
 
     describe("Interest rates", () => {
@@ -316,14 +335,14 @@ describe("ULoan", () => {
             expect(value).to.eq(1008);
 
             // values for one year for different risk levels
-            value = await uloan._computeBorrowerInterestRateForPeriodInBasisPoint(80, 57);
-            expect(value).to.eq(614);
+            value = await uloan._computeBorrowerInterestRateForPeriodInBasisPoint(80, 52);
+            expect(value).to.eq(604);
 
-            value = await uloan._computeBorrowerInterestRateForPeriodInBasisPoint(50, 57);
-            expect(value).to.eq(914);
+            value = await uloan._computeBorrowerInterestRateForPeriodInBasisPoint(50, 52);
+            expect(value).to.eq(904);
 
-            value = await uloan._computeBorrowerInterestRateForPeriodInBasisPoint(30, 57);
-            expect(value).to.eq(1114);
+            value = await uloan._computeBorrowerInterestRateForPeriodInBasisPoint(30, 52);
+            expect(value).to.eq(1104);
         });
 
         it("Should return a valid lender interest rate", async () => {
