@@ -71,17 +71,19 @@ contract ULoan is Ownable {
         uint16 totalNumberOfEpochsToPay;  // fixed value
         uint16 numberOfEpochsPaid;  // increased by one every payment
         uint256 amountToRepayEveryEpoch;
-        address matchMaker;  // address of initiator of the match between the loan and one/many capitalProviders
-        Lender[] lenders;
         LoanState state;
         string closeReason;  // reason why the loan is Closed (to be sourced from an enum)
+        Lender[] lenders;
+        address matchMaker;  // address of initiator of the match between the loan and one/many capitalProviders
+        uint256 matchMakerFee;
+        uint256 protocolOwnerFee;
     }
     uint256 public lastLoanId;
     mapping(uint256 => Loan) public loans;
     mapping(address => uint8) creditScores;
 
     mapping(address => uint256) matchMakerFees;
-    uint256 ownerFees;
+    uint256 protocolOwnerFees;
 
 
     // EVENTS
@@ -257,10 +259,14 @@ contract ULoan is Ownable {
         newLoan.durationInDays = _durationInDays;
         newLoan.amountRequested = _amount;
         newLoan.amountToRepay = amountToRepay;
-        newLoan.numberOfEpochsPaid = uint8(0);
         newLoan.totalNumberOfEpochsToPay = durationInEpochs;
         newLoan.amountToRepayEveryEpoch = _amount / durationInEpochs;
         newLoan.state = LoanState.Requested;
+
+        // The fee amounts are set at creation of the loan to ensure internal consistency of the amounts in the loan,
+        // they must all add-up. If computed when loan is fully paid, risk of having different fees in the meantime.
+        newLoan.matchMakerFee = _percentageOf(_amount, FEE_TO_MATCH_INITIATOR_BP);
+        newLoan.protocolOwnerFee = _percentageOf(_amount, FEE_TO_PROTOCOL_OWNER_BP);
 
         emit LoanRequested(lastLoanId, _amount, borrowerCreditScore, _durationInDays);
     }
@@ -319,8 +325,8 @@ contract ULoan is Ownable {
             loan.state = LoanState.PayedBack;
 
             // now that the loan succeeded, allow match maker and owner to take their fees
-            matchMakerFees[loan.matchMaker] += _percentageOf(loan.amountRequested, FEE_TO_MATCH_INITIATOR_BP);
-            ownerFees += _percentageOf(loan.amountRequested, FEE_TO_PROTOCOL_OWNER_BP);
+            matchMakerFees[loan.matchMaker] += loan.matchMakerFee;
+            protocolOwnerFees += loan.protocolOwnerFee;
 
             emit LoanPaidBack(_loanId);
         }
@@ -407,7 +413,7 @@ contract ULoan is Ownable {
      * Function to be called by protocol owner to get his/her share of the loan fees.
      */
     function getProtocolOwnerFees() public onlyOwner {
-        bool success = stablecoin.transfer(msg.sender, ownerFees);
+        bool success = stablecoin.transfer(msg.sender, protocolOwnerFees);
         require(success, "The transfer of funds from ULoan to your account failed");
     }
 

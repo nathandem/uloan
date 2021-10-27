@@ -44,6 +44,8 @@ describe("ULoanTest", () => {
     let MAX_LOAN_DURATION_IN_DAYS;
     let MIN_LOAN_AMOUNT;
     let MAX_LOAN_AMOUNT;
+    let FEE_TO_MATCH_INITIATOR_BP;
+    let FEE_TO_PROTOCOL_OWNER_BP;
 
     async function _deploy_uloan() {
         stablecoinMock = await deployMockContract(owner, Stablecoin.abi);
@@ -69,6 +71,8 @@ describe("ULoanTest", () => {
         MAX_LOAN_DURATION_IN_DAYS = await uloan.MAX_LOAN_DURATION_IN_DAYS();
         MIN_LOAN_AMOUNT = await uloan.MIN_LOAN_AMOUNT();
         MAX_LOAN_AMOUNT = await uloan.MAX_LOAN_AMOUNT();
+        FEE_TO_MATCH_INITIATOR_BP = await uloan.FEE_TO_MATCH_INITIATOR_BP();
+        FEE_TO_PROTOCOL_OWNER_BP = await uloan.FEE_TO_PROTOCOL_OWNER_BP();
     });
 
     beforeEach(async () => {
@@ -365,7 +369,7 @@ describe("ULoanTest", () => {
                 expect(aliceLoan.matchMaker).to.eq(ethers.constants.AddressZero);
             });
 
-            it("Create a loan with proper amount to repay", async () => {
+            it("Create a loan with proper amounts for lender, matcher and protocol owner", async () => {
                 // inputs:
                 //   x: ethers.BigNumber
                 //   basisPoints: JS number
@@ -382,9 +386,14 @@ describe("ULoanTest", () => {
                 const amountRequested = aliceLoan.amountRequested;
                 const loanDurationInEpochs = valid_duration_in_days / ULOAN_EPOCH_IN_DAYS;
                 const aliceInterestRateForPeriod = await uloan._computeBorrowerInterestRateForPeriodInBasisPoint(alice_credit_score, loanDurationInEpochs);
-                const amountToRepay = amountRequested.add(_percentageOf(amountRequested, aliceInterestRateForPeriod));
+                const expectedAmountToRepay = amountRequested.add(_percentageOf(amountRequested, aliceInterestRateForPeriod));
 
-                expect(aliceLoan.amountToRepay.eq(amountToRepay)).to.be.true;
+                const expectedMatchMakerFee = _percentageOf(amountRequested, FEE_TO_MATCH_INITIATOR_BP);
+                const expectedProtocolOwnerFee = _percentageOf(amountRequested, FEE_TO_PROTOCOL_OWNER_BP);
+
+                expect(aliceLoan.amountToRepay.eq(expectedAmountToRepay)).to.be.true;
+                expect(aliceLoan.matchMakerFee.eq(expectedMatchMakerFee)).to.be.true;
+                expect(aliceLoan.protocolOwnerFee.eq(expectedProtocolOwnerFee)).to.be.true;
             });
         });
 
