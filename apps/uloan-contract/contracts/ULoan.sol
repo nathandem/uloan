@@ -85,6 +85,11 @@ contract ULoan is Ownable {
     mapping(address => uint256) matchMakerFees;
     uint256 protocolOwnerFees;
 
+    struct ProposedLoanCapitalProvider {
+        uint256 id;
+        uint256 amount;  // this amount doesn't have to all the amount available of a lender, it can be less if that makes sense for the proposed match
+    }
+
 
     // EVENTS
     event NewCapitalProvided(uint256 capitalProviderId, uint256 amount, uint8 minRiskLevel, uint8 maxRiskLevel, uint16 lockUpPeriodInDays);
@@ -344,49 +349,51 @@ contract ULoan is Ownable {
      * a valid match and get a fee/percentage of the interest of the loan.
      */
     function matchLoanWithCapital(
-        uint256[] calldata _capitalProviderIds,
-        uint256[] calldata _capitalProviderAmounts,
+        ProposedLoanCapitalProvider[] calldata _proposedCapitalProviders,
         uint256 _loanId
     ) external {
-        Loan storage loan = loans[_loanId];
+        require(_loanId <= lastLoanId, "Only existing loans can be matched");
 
         // Initial checks
-        require(loan.state == LoanState.Requested, "Only requested loans can be matched");
-        require(_capitalProviderIds.length == _capitalProviderAmounts.length, "The length of the provided arguments doesn't match");
-        require(_capitalProviderIds.length > 0, "More than capital provider must be sent");
+        Loan storage loan = loans[_loanId];
+        require(loan.state == LoanState.Requested, "Only loans in the Requested state can be matched");
+        require(_proposedCapitalProviders.length > 0, "At least one capital provider must be proposed for the match");
 
         uint256 sumOfAmounts;
-        for (uint256 i = 0; i < _capitalProviderAmounts.length; i++) {
-            sumOfAmounts += _capitalProviderAmounts[i];
+        for (uint256 i = 0; i < _proposedCapitalProviders.length; i++) {
+            sumOfAmounts += _proposedCapitalProviders[i].amount;
         }
         require(loan.amountRequested == sumOfAmounts, "The sum of the amounts provided doesn't match the amount requested for this loan.");
 
-        for (uint256 i = 0; i < _capitalProviderIds.length; i++) {
-            require(_capitalProviderIds[i] <= lastCapitalProviderId, "This capital provider doesn't exist");
-            CapitalProvider storage loanCapitalProvider = capitalProviders[_capitalProviderIds[i]];
+        for (uint256 i = 0; i < _proposedCapitalProviders.length; i++) {
+            uint256 proposedCapitalProviderId = _proposedCapitalProviders[i].id;
+            uint256 proposedCapitalProviderAmount = _proposedCapitalProviders[i].amount;
+
+            require(proposedCapitalProviderId <= lastCapitalProviderId, "One or more of the capital providers don't exist");
+            CapitalProvider storage proposedCapitalProvider = capitalProviders[proposedCapitalProviderId];
 
             // Check lender has enough capital, risk tolerance and duration
-            require(loanCapitalProvider.amountAvailable >= _capitalProviderAmounts[i], "One or more of the capital providers doesn't have enough capital to fund the loan in the proportion proposed");
-            require(loanCapitalProvider.minRiskLevel >= _creditScoreToRiskLevel(loan.creditScore), "The credit score of the loan's borrower is too high for one or more of the lender (loan not aggressive enough)");
-            require(loanCapitalProvider.maxRiskLevel <= _creditScoreToRiskLevel(loan.creditScore), "The credit score of the loan's borrower is too low for one or more of the lender (loan too risky)");
-            require(loanCapitalProvider.lockUpPeriodInDays >= loan.durationInDays, "One or more of the capital providers lock up period isn't high enough to match that of the loan");
+            require(proposedCapitalProvider.amountAvailable >= proposedCapitalProviderAmount, "One or more of the capital providers don't have enough capital to fund the loan in the proportion proposed");
+            require(_creditScoreToRiskLevel(loan.creditScore) >= proposedCapitalProvider.minRiskLevel, "The risk level of the loan is not high enough for one or more of the lenders");
+            require(_creditScoreToRiskLevel(loan.creditScore) <= proposedCapitalProvider.maxRiskLevel, "The risk level of the loan is too high for one or more of the lenders");
+            require(proposedCapitalProvider.lockUpPeriodInDays >= loan.durationInDays, "One or more of the capital providers lock up period aren't high enough to match that of the loan");
 
             // If the checks pass, reflect the matching of the capital with the loan in the capitalProvider and the loan
             uint16 durationInEpochs = loan.durationInDays / ULOAN_EPOCH_IN_DAYS;
             uint16 lenderInterestRateForPeriodInBasisPoint = _computeLenderInterestRateForPeriodInBasisPoint(_creditScoreToRiskLevel(loan.creditScore), durationInEpochs);
             uint256 totalAmountToGetBack = (
-                _capitalProviderAmounts[i]
-                + _percentageOf(_capitalProviderAmounts[i], lenderInterestRateForPeriodInBasisPoint)
+                proposedCapitalProviderAmount
+                + _percentageOf(proposedCapitalProviderAmount, lenderInterestRateForPeriodInBasisPoint)
             );
 
             // Adjust the capital provider side of the matching
-            loanCapitalProvider.fundedLoanIds.push(_loanId);
-            loanCapitalProvider.amountAvailable -= _capitalProviderAmounts[i];
+            proposedCapitalProvider.fundedLoanIds.push(_loanId);
+            proposedCapitalProvider.amountAvailable -= proposedCapitalProviderAmount;
 
             // Adjust the loan side of the matching
             loan.lenders.push(Lender({
-                lenderId: _capitalProviderIds[i],
-                amountContributed: _capitalProviderAmounts[i],
+                lenderId: proposedCapitalProviderId,
+                amountContributed: proposedCapitalProviderAmount,
                 totalAmountToGetBack: totalAmountToGetBack,
                 amountPaidBack: 0
             }));

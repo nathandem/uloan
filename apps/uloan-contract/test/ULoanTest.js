@@ -16,7 +16,7 @@ const ULOAN_STATES = {
 }
 
 // reminder: amounts are dealt with in wei-like denomination (18 decimal)
-const valid_amount = ethers.utils.parseEther('1000').toString();
+const valid_amount = ethers.utils.parseEther('1000');
 const valid_min_risk = 20;
 const valid_max_risk = 60;
 const valid_lock_period_in_days = 84;
@@ -78,14 +78,25 @@ describe("ULoanTest", () => {
         await uloan.deployed();
     }
 
-    async function signerDepositCapital(signer) {
-        await stablecoinMock.mock.transferFrom.withArgs(signer.address, uloan.address, valid_amount).returns(true);
-        await uloan.connect(signer).depositCapital(valid_amount, valid_min_risk, valid_max_risk, valid_lock_period_in_days);
+    async function signerDepositCapital(
+        signer,
+        amount = valid_amount,
+        minRisk = valid_min_risk,
+        maxRisk = valid_max_risk,
+        lockUpPeriodInDays = valid_lock_period_in_days,
+    ) {
+        await stablecoinMock.mock.transferFrom.withArgs(signer.address, uloan.address, amount).returns(true);
+        await uloan.connect(signer).depositCapital(amount, minRisk, maxRisk, lockUpPeriodInDays);
     }
 
-    async function signerCreateLoan(signer) {
-        await uloan.__testOnly_setBorrowerCreditScore(signer.address, valid_credit_score);
-        await uloan.connect(signer).requestLoan(valid_amount, valid_duration_in_days);
+    async function signerCreateLoan(
+        signer,
+        amount = valid_amount,
+        creditScore = valid_credit_score,
+        durationInDays = valid_duration_in_days,
+    ) {
+        await uloan.__testOnly_setBorrowerCreditScore(signer.address, creditScore);
+        await uloan.connect(signer).requestLoan(amount, durationInDays);
     }
 
     describe("Correctly initialize the contract when being deployed", () => {
@@ -366,7 +377,7 @@ describe("ULoanTest", () => {
                 expect(aliceLoan.totalNumberOfEpochsToPay).to.eq(durationInEpochs);
                 // note: just like Solidity, ethers' BigNumber operations always return an interger, which is great.
                 // in this case, valid_amount/durationInEpochs (10000/12) should be 83.3333 but ethers returns 83 which matches the solidity values!
-                expect(aliceLoan.amountToRepayEveryEpoch).to.eq(ethers.BigNumber.from(valid_amount).div(durationInEpochs));
+                expect(aliceLoan.amountToRepayEveryEpoch).to.eq(valid_amount.div(durationInEpochs));
                 expect(aliceLoan.state).to.eq(ULOAN_STATES.Requested);
                 // uninitialized values for now
                 expect(aliceLoan.lenders).to.be.undefined;
@@ -431,7 +442,92 @@ describe("ULoanTest", () => {
         });
     });
 
-    describe("Interest rates", () => {
+    describe("Match loan with available capital", () => {
+        beforeEach(async () => {
+            // create 1 loan
+            await signerCreateLoan(alice, valid_amount.mul(2));
+
+            // create 2 capital providers, the combination of both matches the amount asked by Alice's loan
+            await signerDepositCapital(bob);
+            await signerDepositCapital(charles);
+        });
+
+        describe("Checks", () => {
+            it("Fails if loan doesn't exist", async () => {
+                await expect(uloan.matchLoanWithCapital(
+                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
+                    2
+                )).to.be.revertedWith("Only existing loans can be matched");
+            });
+
+            it("Fails if loan is not in the initial state (i.e. `Requested`)", async () => {
+                await uloan.__testOnly_setLoanState(1, ULOAN_STATES.Funded);
+                await expect(uloan.matchLoanWithCapital(
+                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
+                    1
+                )).to.be.revertedWith("Only loans in the Requested state can be matched");
+            });
+
+            it("Fails if not at least one capital provider must be proposed for the match", async () => {
+                await expect(uloan.matchLoanWithCapital(
+                    [], 1
+                )).to.be.revertedWith("At least one capital provider must be proposed for the match");
+            });
+
+            it("Fails if the sum of proposed amounts doesn't match that of the loan", async () => {
+                // up
+                await expect(uloan.matchLoanWithCapital(
+                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount.add(1) }], 1
+                )).to.be.revertedWith("The sum of the amounts provided doesn't match the amount requested for this loan.");
+
+                // down
+                await expect(uloan.matchLoanWithCapital(
+                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount.sub(1) }], 1
+                )).to.be.revertedWith("The sum of the amounts provided doesn't match the amount requested for this loan.");
+            });
+
+            it("Fails if one or more of the capital providers don't exist", async () => {
+                await expect(uloan.matchLoanWithCapital(
+                    [{ id: 1000, amount: valid_amount }, { id: 2000, amount: valid_amount }], 1
+                )).to.be.revertedWith("One or more of the capital providers don't exist");
+            });
+
+            it("Fails if one or more of the capital providers don't have enough fund to participate as proposed", async () => {
+                const amountBelowRequirementForMatch = ethers.utils.parseEther('100');
+                await signerDepositCapital(bob, amountBelowRequirementForMatch);
+
+                await expect(uloan.matchLoanWithCapital(
+                    [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
+                )).to.be.revertedWith("One or more of the capital providers don't have enough capital to fund the loan in the proportion proposed");
+            });
+
+            it("Fails if the risk level of the loan is too low for one or more of the proposed capital providers", async () => {
+                await signerDepositCapital(bob, valid_amount, 80, MAX_RISK_LEVEL);
+
+                await expect(uloan.matchLoanWithCapital(
+                    [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
+                )).to.be.revertedWith("The risk level of the loan is not high enough for one or more of the lenders");
+            });
+
+            it("Fails if the risk level of the loan is too high for one or more of the proposed capital providers", async () => {
+                await signerDepositCapital(bob, valid_amount, MIN_RISK_LEVEL, 40);
+
+                await expect(uloan.matchLoanWithCapital(
+                    [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
+                )).to.be.revertedWith("The risk level of the loan is too high for one or more of the lenders");
+            });
+
+            it("Fails if the duration of the loan is too high for the lock-up period of one or more of the proposed capital providers", async () => {
+                await signerDepositCapital(bob, valid_amount, valid_min_risk, valid_max_risk, MIN_LOCKUP_PERIOD_IN_DAYS);
+
+                await expect(uloan.matchLoanWithCapital(
+                    [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
+                )).to.be.revertedWith("One or more of the capital providers lock up period aren't high enough to match that of the loan");
+            });
+        });
+    });
+
+    describe("Interest rates, risk and credit manipulation", () => {
         it("Should return a valid borrower interest rate", async () => {
             let value;
 
@@ -478,6 +574,16 @@ describe("ULoanTest", () => {
 
             value = await uloan._computeBorrowerInterestRateForPeriodInBasisPoint(30, 57);
             expect(value).to.eq(1114);
+        });
+
+        it("Credit score and risk level should miror themselves", async () => {
+            expect(await uloan._creditScoreToRiskLevel(50)).to.eq(50);
+            expect(await uloan._creditScoreToRiskLevel(40)).to.eq(60);
+            expect(await uloan._creditScoreToRiskLevel(20)).to.eq(80);
+
+            expect(await uloan._riskLevelToCreditScore(50)).to.eq(50);
+            expect(await uloan._riskLevelToCreditScore(40)).to.eq(60);
+            expect(await uloan._riskLevelToCreditScore(20)).to.eq(80);
         });
     });
 });
