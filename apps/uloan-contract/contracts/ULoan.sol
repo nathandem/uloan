@@ -97,6 +97,7 @@ contract ULoan is Ownable {
     event CapitalProviderRecouped(uint256 capitalProviderId, uint256 amountRecouped);
     event LoanRequested(uint256 loanId, uint256 amount, uint8 borrowerCreditScore, uint16 durationInDays);
     event LoanWithdrawn(uint256 loanId);
+    event LoanRepaymentMade(uint256 loanId, uint16 numberOfEpochsPaid, uint16 totalNumberOfEpochsToPay);
     event LoanPaidBack(uint256 loanId);
     event LoanMatchedWithCapital(uint256 loanId);  // listeners should query the protocol to get the detail of the capital providers attached to the loan
 
@@ -302,10 +303,12 @@ contract ULoan is Ownable {
      * - loan.amountToRepayEveryEpoch gives the amount to repay every epoch/period (in the stablecoin decimal)
      */
     function payLoan(uint _loanId) public {
+        require(_loanId <= lastLoanId, "No loan match this loanId");
+
         Loan storage loan = loans[_loanId];
 
         require(loan.borrower == msg.sender, "Loans should be paid back by those who initiate them");
-        require((loan.state == LoanState.Withdrawn || loan.state == LoanState.BeingPaidBack), "The loan is not ready for repayment yet");
+        require((loan.state == LoanState.Withdrawn || loan.state == LoanState.BeingPaidBack), "The loan is not ready for repayment yet or has already been fully paid back");
 
         bool success = stablecoin.transferFrom(msg.sender, address(this), loan.amountToRepayEveryEpoch);
         require(success, "The transfer of funds failed, do you have enough funds approved for transfer to the protocol?");
@@ -325,6 +328,8 @@ contract ULoan is Ownable {
             CapitalProvider storage loanCapitalProvider = capitalProviders[loanLender.lenderId];
             loanCapitalProvider.amountAvailable += amountToAddToLender;
         }
+
+        emit LoanRepaymentMade(_loanId, loan.numberOfEpochsPaid, loan.totalNumberOfEpochsToPay);
 
         if (loan.numberOfEpochsPaid == loan.totalNumberOfEpochsToPay) {
             loan.state = LoanState.PayedBack;

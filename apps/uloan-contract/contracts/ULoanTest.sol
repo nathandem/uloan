@@ -29,4 +29,8 @@ contract ULoanTest is ULoan {
     function __testOnly_setCapitalProviderAvailableCapital(uint256 _capitalProviderId, uint256 _newAmountAvailable) public {
         capitalProviders[_capitalProviderId].amountAvailable = _newAmountAvailable;
     }
+
+    function __testOnly_setLoanMatchMaker(uint256 _loanId, address _newMatchMaker) public {
+        loans[_loanId].matchMaker = _newMatchMaker;
+    }
 }

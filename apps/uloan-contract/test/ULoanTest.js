@@ -47,7 +47,7 @@ describe("ULoanTest", () => {
     let FEE_TO_PROTOCOL_OWNER_BP;
 
     before(async () => {
-        [owner, bob, alice, charles] = await ethers.getSigners();
+        [owner, bob, alice, charles, matcher] = await ethers.getSigners();
         ULoanTestContract = await ethers.getContractFactory("ULoanTest");
 
         // contract needs to be available/deployed to get the contract constants
@@ -451,6 +451,109 @@ describe("ULoanTest", () => {
 
                 const aliceLoan = await uloan.loans(1);
                 expect(aliceLoan.state).to.eq(ULOAN_STATES.Withdrawn);
+            });
+        });
+
+        describe("Pay loan epoch repayment", () => {
+            let aliceLoanId;
+            async function _createAndFundAliceLoan() {
+                // create the loan
+                await _signerCreateLoan(alice, valid_amount.mul(2));
+                aliceLoanId = await uloan.lastLoanId();
+
+                // fund the loan by 2 lenders providing capital
+                await _signerDepositCapital(bob);
+                await _signerDepositCapital(charles);
+                await uloan.matchLoanWithCapital(
+                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
+                    aliceLoanId
+                );
+
+                // mark the loan as withdrawn
+                await uloan.__testOnly_setLoanState(aliceLoanId, ULOAN_STATES.Withdrawn);
+
+                // set stablecoin mock to allow repayment from Alice to protocol
+                const amountToRepayEveryEpoch = (await uloan.loans(aliceLoanId)).amountToRepayEveryEpoch;
+                await stablecoinMock.mock.transferFrom.withArgs(alice.address, uloan.address, amountToRepayEveryEpoch).returns(true);
+            }
+
+            beforeEach(async () => {
+                await _createAndFundAliceLoan();
+            });
+
+            it("Fails if loan doesn't exist", async () => {
+                await expect(uloan.payLoan(1000)).to.be.revertedWith("No loan match this loanId");
+            });
+
+            it("Fails if sender isn't the loan initiator", async () => {
+                await expect(uloan.connect(owner).payLoan(aliceLoanId)).to.be.revertedWith("Loans should be paid back by those who initiate them");
+            });
+
+            it("Fails if loan state isn't suited for repayment", async () => {
+                await uloan.__testOnly_setLoanState(aliceLoanId, ULOAN_STATES.Funded);
+
+                await expect(uloan.connect(alice).payLoan(aliceLoanId))
+                    .to.be.revertedWith("The loan is not ready for repayment yet or has already been fully paid back");
+            });
+
+            it("Fails if funds transfer from borrower to protocol fails", async () => {
+                const amountToRepayEveryEpoch = (await uloan.loans(aliceLoanId)).amountToRepayEveryEpoch;
+                await stablecoinMock.mock.transferFrom.withArgs(alice.address, uloan.address, amountToRepayEveryEpoch).returns(false);
+
+                await expect(uloan.connect(alice).payLoan(aliceLoanId)).to.be.revertedWith("The transfer of funds failed, do you have enough funds approved for transfer to the protocol?");
+            });
+
+            it("Updates the amount paid back and available to lenders", async () => {
+                let aliceLoan;
+                aliceLoan = await uloan.loans(aliceLoanId);
+
+                const nextBlockTimestamp = await _setNextBlockTimestamp();
+
+                // do the first repayment
+                await expect(uloan.connect(alice).payLoan(aliceLoanId))
+                    .to.emit(uloan, "LoanRepaymentMade")
+                    .withArgs(aliceLoanId, aliceLoan.numberOfEpochsPaid + 1, aliceLoan.totalNumberOfEpochsToPay);
+
+                // get new `aliceLoan` object after repayment made and (remote) contract state updated
+                aliceLoan = await uloan.loans(aliceLoanId);
+                expect(aliceLoan.lastActionTimestamp).to.eq(nextBlockTimestamp);
+                expect(aliceLoan.numberOfEpochsPaid).to.eq(1);
+
+                // check amount paid to lenders updated
+                for (let i = 0; i < 2; i++) {
+                    // note: solidity's native struct getters don't include the arrays in them, hence `getLoanLender`
+                    const lender = await uloan.getLoanLender(aliceLoanId, i);
+
+                    const amountToAddToLender = lender.totalAmountToGetBack.div(aliceLoan.totalNumberOfEpochsToPay);
+                    expect(lender.amountPaidBack.eq(amountToAddToLender)).to.be.true;
+                }
+            });
+
+            it("Moves the state of the loan from Withdrawn to BeingPaidBack when first repayment is made", async () => {
+                await uloan.connect(alice).payLoan(aliceLoanId);
+
+                expect((await uloan.loans(aliceLoanId)).state).to.eq(ULOAN_STATES.BeingPaidBack);
+            });
+
+            it("Closes the loan and assign fees to match maker and protocol owner when the payment is over", async () => {
+                await uloan.__testOnly_setLoanMatchMaker(aliceLoanId, matcher.address);
+                const aliceLoan = await uloan.loans(aliceLoanId);
+
+                for (let i = 0; i < aliceLoan.totalNumberOfEpochsToPay; i++) {
+                    await uloan.connect(alice).payLoan(aliceLoanId);
+
+                    if (i === aliceLoan.totalNumberOfEpochsToPay) {
+                        // refresh the value of `aliceLoan` from the contract
+                        const aliceLoan = await uloan.loans(aliceLoanId);
+
+                        expect(aliceLoan.numberOfEpochsPaid).to.eq(aliceLoan.totalNumberOfEpochsToPay);
+                        expect(aliceLoan.state).to.eq(ULOAN_STATES.PayedBack);
+
+                        // match maker and protocol owner get their fee now
+                        expect(await uloan.matchMakerFees(matcher.address)).to.eq(aliceLoan.matchMakerFee);
+                        expect(await uloan.protocolOwnerFees).to.eq(aliceLoan.protocolOwnerFee);
+                    }
+                }
             });
         });
     });
