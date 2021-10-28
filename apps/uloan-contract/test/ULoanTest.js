@@ -213,8 +213,13 @@ describe("ULoanTest", () => {
                 await expect(uloan.connect(bob).recoupAllCapital()).to.be.revertedWith("No provided capital is attached to this address");
             });
 
-            // TODO: come back to this test later when loan creation and matching tested
-            it.skip("Fails if lender has currently no available capital to withdraw", async () => {});
+            it("Fails if lender has currently no available capital to withdraw", async () => {
+                // create capital provider and set its amount available to 0
+                await _signerDepositCapital(alice);
+                await uloan.__testOnly_setCapitalProviderAvailableCapital(1, 0);
+
+                await expect(uloan.connect(alice).recoupAllCapital()).to.be.revertedWith("You currently have no capital to withdraw");
+            });
 
             it("In case of success, all of the capital available of an user is withdrawn", async () => {
                 await _signerDepositCapital(alice);

@@ -25,4 +25,8 @@ contract ULoanTest is ULoan {
     function __testOnly_setLoanState(uint256 _loanId, ULoan.LoanState _newState) public {
         loans[_loanId].state = _newState;
     }
+
+    function __testOnly_setCapitalProviderAvailableCapital(uint256 _capitalProviderId, uint256 _newAmountAvailable) public {
+        capitalProviders[_capitalProviderId].amountAvailable = _newAmountAvailable;
+    }
 }
