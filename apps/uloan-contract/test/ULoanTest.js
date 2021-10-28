@@ -78,11 +78,16 @@ describe("ULoanTest", () => {
         await uloan.deployed();
     }
 
-    async function _setNextBlockTimestamp(nextBlockTimestamp) {
+    let nextBlockTimestamp = 1000000000;
+    async function _setNextBlockTimestamp() {
+        nextBlockTimestamp += 1000000000;
+
         await hre.network.provider.request({
             method: "evm_setNextBlockTimestamp",
             params: [nextBlockTimestamp],
         });
+
+        return nextBlockTimestamp;
     }
 
     async function _signerDepositCapital(
@@ -359,8 +364,7 @@ describe("ULoanTest", () => {
             });
 
             it("Creates a loan without lenders and emit an event about it when credit score exist", async () => {
-                const nextBlockTimestamp = 2627657056;
-                await _setNextBlockTimestamp(nextBlockTimestamp);
+                const nextBlockTimestamp = await _setNextBlockTimestamp();
 
                 let lastLoanId = (await uloan.lastLoanId()) + 1;
 
@@ -551,8 +555,7 @@ describe("ULoanTest", () => {
             });
 
             it("Should adjust the loan state, in particular by adding the capital providers that funded it", async () => {
-                const nextBlockTimestamp = 2627657056;
-                await _setNextBlockTimestamp(nextBlockTimestamp);
+                const nextBlockTimestamp = await _setNextBlockTimestamp();
 
                 await uloan.matchLoanWithCapital(
                     [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
