@@ -540,9 +540,9 @@ describe("ULoanTest", () => {
                 const aliceLoan = await uloan.loans(aliceLoanId);
 
                 for (let i = 0; i < aliceLoan.totalNumberOfEpochsToPay; i++) {
-                    await uloan.connect(alice).payLoan(aliceLoanId);
-
                     if (i === aliceLoan.totalNumberOfEpochsToPay) {
+                        await expect(uloan.connect(alice).payLoan(aliceLoanId)).to.emit(uloan, "LoanPaidBack").withArgs(aliceLoanId);
+
                         // refresh the value of `aliceLoan` from the contract
                         const aliceLoan = await uloan.loans(aliceLoanId);
 
@@ -552,6 +552,8 @@ describe("ULoanTest", () => {
                         // match maker and protocol owner get their fee now
                         expect(await uloan.matchMakerFees(matcher.address)).to.eq(aliceLoan.matchMakerFee);
                         expect(await uloan.protocolOwnerFees).to.eq(aliceLoan.protocolOwnerFee);
+                    } else {
+                        await uloan.connect(alice).payLoan(aliceLoanId);
                     }
                 }
             });
