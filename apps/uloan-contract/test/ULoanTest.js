@@ -558,156 +558,158 @@ describe("ULoanTest", () => {
         });
     });
 
-    describe("Match loan with proposed capital", () => {
-        beforeEach(async () => {
-            // create 1 loan
-            await _signerCreateLoan(alice, valid_amount.mul(2));
+    describe("Matcher operations", () => {
+        describe("Match loan with proposed capital", () => {
+            beforeEach(async () => {
+                // create 1 loan
+                await _signerCreateLoan(alice, valid_amount.mul(2));
 
-            // create 2 capital providers, the combination of both matches the amount asked by Alice's loan
-            await _signerDepositCapital(bob);
-            await _signerDepositCapital(charles);
-        });
-
-        describe("Checks", () => {
-            it("Fails if loan doesn't exist", async () => {
-                await expect(uloan.matchLoanWithCapital(
-                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
-                    2
-                )).to.be.revertedWith("Only existing loans can be matched");
+                // create 2 capital providers, the combination of both matches the amount asked by Alice's loan
+                await _signerDepositCapital(bob);
+                await _signerDepositCapital(charles);
             });
 
-            it("Fails if loan is not in the initial state (i.e. `Requested`)", async () => {
-                await uloan.__testOnly_setLoanState(1, ULOAN_STATES.Funded);
-                await expect(uloan.matchLoanWithCapital(
-                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
-                    1
-                )).to.be.revertedWith("Only loans in the Requested state can be matched");
+            describe("Checks", () => {
+                it("Fails if loan doesn't exist", async () => {
+                    await expect(uloan.matchLoanWithCapital(
+                        [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
+                        2
+                    )).to.be.revertedWith("Only existing loans can be matched");
+                });
+
+                it("Fails if loan is not in the initial state (i.e. `Requested`)", async () => {
+                    await uloan.__testOnly_setLoanState(1, ULOAN_STATES.Funded);
+                    await expect(uloan.matchLoanWithCapital(
+                        [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
+                        1
+                    )).to.be.revertedWith("Only loans in the Requested state can be matched");
+                });
+
+                it("Fails if not at least one capital provider must be proposed for the match", async () => {
+                    await expect(uloan.matchLoanWithCapital(
+                        [], 1
+                    )).to.be.revertedWith("At least one capital provider must be proposed for the match");
+                });
+
+                it("Fails if the sum of proposed amounts doesn't match that of the loan", async () => {
+                    // up
+                    await expect(uloan.matchLoanWithCapital(
+                        [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount.add(1) }], 1
+                    )).to.be.revertedWith("The sum of the amounts provided doesn't match the amount requested for this loan.");
+
+                    // down
+                    await expect(uloan.matchLoanWithCapital(
+                        [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount.sub(1) }], 1
+                    )).to.be.revertedWith("The sum of the amounts provided doesn't match the amount requested for this loan.");
+                });
+
+                it("Fails if one or more of the capital providers don't exist", async () => {
+                    await expect(uloan.matchLoanWithCapital(
+                        [{ id: 1000, amount: valid_amount }, { id: 2000, amount: valid_amount }], 1
+                    )).to.be.revertedWith("One or more of the capital providers don't exist");
+                });
+
+                it("Fails if one or more of the capital providers don't have enough fund to participate as proposed", async () => {
+                    const amountBelowRequirementForMatch = ethers.utils.parseEther('100');
+                    await _signerDepositCapital(bob, amountBelowRequirementForMatch);
+
+                    await expect(uloan.matchLoanWithCapital(
+                        [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
+                    )).to.be.revertedWith("One or more of the capital providers don't have enough capital to fund the loan in the proportion proposed");
+                });
+
+                it("Fails if the risk level of the loan is too low for one or more of the proposed capital providers", async () => {
+                    await _signerDepositCapital(bob, valid_amount, 80, MAX_RISK_LEVEL);
+
+                    await expect(uloan.matchLoanWithCapital(
+                        [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
+                    )).to.be.revertedWith("The risk level of the loan is not high enough for one or more of the lenders");
+                });
+
+                it("Fails if the risk level of the loan is too high for one or more of the proposed capital providers", async () => {
+                    await _signerDepositCapital(bob, valid_amount, MIN_RISK_LEVEL, 40);
+
+                    await expect(uloan.matchLoanWithCapital(
+                        [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
+                    )).to.be.revertedWith("The risk level of the loan is too high for one or more of the lenders");
+                });
+
+                it("Fails if the duration of the loan is too high for the lock-up period of one or more of the proposed capital providers", async () => {
+                    await _signerDepositCapital(bob, valid_amount, valid_min_risk, valid_max_risk, MIN_LOCKUP_PERIOD_IN_DAYS);
+
+                    await expect(uloan.matchLoanWithCapital(
+                        [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
+                    )).to.be.revertedWith("One or more of the capital providers lock up period aren't high enough to match that of the loan");
+                });
             });
 
-            it("Fails if not at least one capital provider must be proposed for the match", async () => {
-                await expect(uloan.matchLoanWithCapital(
-                    [], 1
-                )).to.be.revertedWith("At least one capital provider must be proposed for the match");
-            });
+            describe("Core logic", () => {
+                it("Should emit LoanMatchedWithCapital when the loan is matched with capital", async () => {
+                    await expect(uloan.matchLoanWithCapital(
+                        [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
+                        1
+                    )).to.emit(uloan, "LoanMatchedWithCapital").withArgs(1);
+                });
 
-            it("Fails if the sum of proposed amounts doesn't match that of the loan", async () => {
-                // up
-                await expect(uloan.matchLoanWithCapital(
-                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount.add(1) }], 1
-                )).to.be.revertedWith("The sum of the amounts provided doesn't match the amount requested for this loan.");
+                it("Should adjust the accepted capital provider states (attach the loanId and reduce their amounts available)", async () => {
+                    await uloan.matchLoanWithCapital(
+                        [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
+                        1
+                    );
 
-                // down
-                await expect(uloan.matchLoanWithCapital(
-                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount.sub(1) }], 1
-                )).to.be.revertedWith("The sum of the amounts provided doesn't match the amount requested for this loan.");
-            });
+                    for (capitalProviderId of [1, 2]) {
+                        expect((await uloan.capitalProviders(capitalProviderId)).amountAvailable).to.eq(0);  // valid_amount - valid_amount
+                        expect((await uloan.getCapitalProviderFundedLoanId(capitalProviderId, 0))).to.eq(1);  // `1` refers the id of the loan created in `beforeEach`
+                    }
+                });
 
-            it("Fails if one or more of the capital providers don't exist", async () => {
-                await expect(uloan.matchLoanWithCapital(
-                    [{ id: 1000, amount: valid_amount }, { id: 2000, amount: valid_amount }], 1
-                )).to.be.revertedWith("One or more of the capital providers don't exist");
-            });
+                it("Should adjust the loan state, in particular by adding the capital providers that funded it", async () => {
+                    const nextBlockTimestamp = await _setNextBlockTimestamp();
 
-            it("Fails if one or more of the capital providers don't have enough fund to participate as proposed", async () => {
-                const amountBelowRequirementForMatch = ethers.utils.parseEther('100');
-                await _signerDepositCapital(bob, amountBelowRequirementForMatch);
+                    await uloan.matchLoanWithCapital(
+                        [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
+                        1
+                    );
 
-                await expect(uloan.matchLoanWithCapital(
-                    [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
-                )).to.be.revertedWith("One or more of the capital providers don't have enough capital to fund the loan in the proportion proposed");
-            });
+                    const loan = await uloan.loans(1);
+                    expect(loan.state).to.eq(ULOAN_STATES.Funded);
+                    expect(loan.lastActionTimestamp).to.eq(nextBlockTimestamp);
+                    expect(loan.matchMaker).to.eq(owner.address);
 
-            it("Fails if the risk level of the loan is too low for one or more of the proposed capital providers", async () => {
-                await _signerDepositCapital(bob, valid_amount, 80, MAX_RISK_LEVEL);
+                    expect((await uloan.getLoanLendersLength(1))).to.eq(2);
 
-                await expect(uloan.matchLoanWithCapital(
-                    [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
-                )).to.be.revertedWith("The risk level of the loan is not high enough for one or more of the lenders");
-            });
+                    let loanLender;
+                    // check the first lender struct attached to the loan
+                    loanLender = await uloan.getLoanLender(1, 0);
+                    expect(loanLender.lenderId).to.eq(1);  // as it's visible in the call to matchLoanWithCapital above, the capital provider with id 1 is inserted first
+                    expect(loanLender.amountContributed).to.eq(valid_amount);
+                    expect(loanLender.totalAmountToGetBack.gt(valid_amount)).to.be.true;
+                    expect(loanLender.amountPaidBack).to.eq(0);
 
-            it("Fails if the risk level of the loan is too high for one or more of the proposed capital providers", async () => {
-                await _signerDepositCapital(bob, valid_amount, MIN_RISK_LEVEL, 40);
+                    // check the second lender struct attached to the loan
+                    loanLender = await uloan.getLoanLender(1, 1);
+                    expect(loanLender.lenderId).to.eq(2);
+                    expect(loanLender.amountContributed).to.eq(valid_amount);
+                    expect(loanLender.totalAmountToGetBack.gt(valid_amount)).to.be.true;
+                    expect(loanLender.amountPaidBack).to.eq(0);
+                });
 
-                await expect(uloan.matchLoanWithCapital(
-                    [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
-                )).to.be.revertedWith("The risk level of the loan is too high for one or more of the lenders");
-            });
+                it("Amounts should add up to total: loan's amountToRepay = sum of lender's totalAmountToGetBack + matchMakerFee + protocolOwnerFee", async () => {
+                    await uloan.matchLoanWithCapital(
+                        [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
+                        1
+                    );
+                    const loanId = 1;
 
-            it("Fails if the duration of the loan is too high for the lock-up period of one or more of the proposed capital providers", async () => {
-                await _signerDepositCapital(bob, valid_amount, valid_min_risk, valid_max_risk, MIN_LOCKUP_PERIOD_IN_DAYS);
+                    const firstLenderTotalAmountToGetBack = (await uloan.getLoanLender(loanId, 0)).totalAmountToGetBack;
+                    const secondLenderTotalAmountToGetBack = (await uloan.getLoanLender(loanId, 1)).totalAmountToGetBack;
+                    const lendersTotalAmountToGetBack = firstLenderTotalAmountToGetBack.add(secondLenderTotalAmountToGetBack);
 
-                await expect(uloan.matchLoanWithCapital(
-                    [{ id: 3, amount: valid_amount }, { id: 2, amount: valid_amount }], 1
-                )).to.be.revertedWith("One or more of the capital providers lock up period aren't high enough to match that of the loan");
-            });
-        });
+                    const loan = await uloan.loans(loanId);
+                    const totalAmountClaimed = lendersTotalAmountToGetBack.add(loan.matchMakerFee).add(loan.protocolOwnerFee);
 
-        describe("Core logic", () => {
-            it("Should emit LoanMatchedWithCapital when the loan is matched with capital", async () => {
-                await expect(uloan.matchLoanWithCapital(
-                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
-                    1
-                )).to.emit(uloan, "LoanMatchedWithCapital").withArgs(1);
-            });
-
-            it("Should adjust the accepted capital provider states (attach the loanId and reduce their amounts available)", async () => {
-                await uloan.matchLoanWithCapital(
-                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
-                    1
-                );
-
-                for (capitalProviderId of [1, 2]) {
-                    expect((await uloan.capitalProviders(capitalProviderId)).amountAvailable).to.eq(0);  // valid_amount - valid_amount
-                    expect((await uloan.getCapitalProviderFundedLoanId(capitalProviderId, 0))).to.eq(1);  // `1` refers the id of the loan created in `beforeEach`
-                }
-            });
-
-            it("Should adjust the loan state, in particular by adding the capital providers that funded it", async () => {
-                const nextBlockTimestamp = await _setNextBlockTimestamp();
-
-                await uloan.matchLoanWithCapital(
-                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
-                    1
-                );
-
-                const loan = await uloan.loans(1);
-                expect(loan.state).to.eq(ULOAN_STATES.Funded);
-                expect(loan.lastActionTimestamp).to.eq(nextBlockTimestamp);
-                expect(loan.matchMaker).to.eq(owner.address);
-
-                expect((await uloan.getLoanLendersLength(1))).to.eq(2);
-
-                let loanLender;
-                // check the first lender struct attached to the loan
-                loanLender = await uloan.getLoanLender(1, 0);
-                expect(loanLender.lenderId).to.eq(1);  // as it's visible in the call to matchLoanWithCapital above, the capital provider with id 1 is inserted first
-                expect(loanLender.amountContributed).to.eq(valid_amount);
-                expect(loanLender.totalAmountToGetBack.gt(valid_amount)).to.be.true;
-                expect(loanLender.amountPaidBack).to.eq(0);
-
-                // check the second lender struct attached to the loan
-                loanLender = await uloan.getLoanLender(1, 1);
-                expect(loanLender.lenderId).to.eq(2);
-                expect(loanLender.amountContributed).to.eq(valid_amount);
-                expect(loanLender.totalAmountToGetBack.gt(valid_amount)).to.be.true;
-                expect(loanLender.amountPaidBack).to.eq(0);
-            });
-
-            it("Amounts should add up to total: loan's amountToRepay = sum of lender's totalAmountToGetBack + matchMakerFee + protocolOwnerFee", async () => {
-                await uloan.matchLoanWithCapital(
-                    [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
-                    1
-                );
-                const loanId = 1;
-
-                const firstLenderTotalAmountToGetBack = (await uloan.getLoanLender(loanId, 0)).totalAmountToGetBack;
-                const secondLenderTotalAmountToGetBack = (await uloan.getLoanLender(loanId, 1)).totalAmountToGetBack;
-                const lendersTotalAmountToGetBack = firstLenderTotalAmountToGetBack.add(secondLenderTotalAmountToGetBack);
-
-                const loan = await uloan.loans(loanId);
-                const totalAmountClaimed = lendersTotalAmountToGetBack.add(loan.matchMakerFee).add(loan.protocolOwnerFee);
-
-                expect(loan.amountToRepay.eq(totalAmountClaimed)).to.be.true;
+                    expect(loan.amountToRepay.eq(totalAmountClaimed)).to.be.true;
+                });
             });
         });
     });
