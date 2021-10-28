@@ -9,7 +9,9 @@
   "scripts": {
     "contract:startHardHatChain": "yarn workspace @uloan/contract startHardHatChain",
     "contract:compile": "yarn workspace @uloan/contract compile && node scripts/copyULoanAbi.js",
-    "contract:deploy:local": "yarn contract:compile && yarn workspace @uloan/contract deploy:local"
+    "contract:deploy:local": "yarn contract:compile && yarn workspace @uloan/contract deploy:local",
+    "contract:testWithoutCoverage": "yarn contract:compile && yarn workspace @uloan/contract testWithoutCoverage",
+    "contract:testWithCoverage": "yarn contract:compile && yarn workspace @uloan/contract testWithCoverage"
   },
   "workspaces": [
     "apps/uloan-contract",
