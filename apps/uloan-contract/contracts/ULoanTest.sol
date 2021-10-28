@@ -37,4 +37,8 @@ contract ULoanTest is ULoan {
     function __testOnly_setMatchMakerFees(address _matchMaker, uint256 _fees) public {
         matchMakerFees[_matchMaker] = _fees;
     }
+
+    function __testOnly_setProtocolOwnerFees(uint256 _fees) public {
+        protocolOwnerFees = _fees;
+    }
 }

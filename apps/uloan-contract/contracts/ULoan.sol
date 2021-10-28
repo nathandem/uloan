@@ -425,6 +425,8 @@ contract ULoan is Ownable {
      * Function to be called by protocol owner to get his/her share of the loan fees.
      */
     function getProtocolOwnerFees() public onlyOwner {
+        require(protocolOwnerFees > 0, "No fee to collect for now");
+
         bool success = stablecoin.transfer(msg.sender, protocolOwnerFees);
         require(success, "The transfer of funds from ULoan to your account failed");
     }

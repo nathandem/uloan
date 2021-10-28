@@ -728,6 +728,28 @@ describe("ULoanTest", () => {
 
     });
 
+    describe("Protocol owner operations", () => {
+        describe("Get collected protocol fees", () => {
+            it("Fails if no fee to collect at the moment", async () => {
+                await expect(uloan.connect(owner).getProtocolOwnerFees()).to.be.revertedWith("No fee to collect for now");
+            });
+
+            it("Fails user other than owner tries to withdraw fees", async () => {
+                await uloan.__testOnly_setProtocolOwnerFees(valid_amount);
+                await stablecoinMock.mock.transfer.withArgs(owner.address, valid_amount).returns(true);
+
+                await expect(uloan.connect(bob).getProtocolOwnerFees()).to.be.revertedWith("'Ownable: caller is not the owner");
+            });
+
+            it("Transfers fees from protocol to owner", async () => {
+                await uloan.__testOnly_setProtocolOwnerFees(valid_amount);
+                await stablecoinMock.mock.transfer.withArgs(owner.address, valid_amount).returns(true);
+
+                await expect(uloan.connect(owner).getProtocolOwnerFees()).not.to.be.reverted;
+            });
+        });
+    });
+
     describe("Interest rates, risk and credit manipulation", () => {
         it("Should return a valid borrower interest rate", async () => {
             let value;
