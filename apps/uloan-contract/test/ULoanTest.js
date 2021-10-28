@@ -712,6 +712,20 @@ describe("ULoanTest", () => {
                 });
             });
         });
+
+        describe("Recuperate match maker fees", () => {
+            it("Fails if address hasn't successfully matched loans which are now over", async () => {
+                await expect(uloan.connect(bob).getLoansMatchingFees()).to.revertedWith("Are you sure you matched loans which are now paid back?");
+            });
+
+            it("Fails if address hasn't successfully matched loans which are now over", async () => {
+                await uloan.__testOnly_setMatchMakerFees(alice.address, valid_amount);
+
+                await stablecoinMock.mock.transfer.withArgs(alice.address, valid_amount).returns(true);
+                await expect(uloan.connect(alice).getLoansMatchingFees()).not.to.reverted;
+            });
+        });
+
     });
 
     describe("Interest rates, risk and credit manipulation", () => {

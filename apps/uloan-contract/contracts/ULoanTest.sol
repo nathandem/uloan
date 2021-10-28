@@ -33,4 +33,8 @@ contract ULoanTest is ULoan {
     function __testOnly_setLoanMatchMaker(uint256 _loanId, address _newMatchMaker) public {
         loans[_loanId].matchMaker = _newMatchMaker;
     }
+
+    function __testOnly_setMatchMakerFees(address _matchMaker, uint256 _fees) public {
+        matchMakerFees[_matchMaker] = _fees;
+    }
 }
