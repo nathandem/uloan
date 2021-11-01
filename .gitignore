@@ -26,5 +26,5 @@ apps/uloan-web/npm-debug.log*
 apps/uloan-web/yarn-debug.log*
 apps/uloan-web/yarn-error.log*
 
-# Files to ignore in uloan-backend
-apps/uloan-backend/dist*
+# Files to ignore in uloan-matcher
+apps/uloan-matcher/dist*

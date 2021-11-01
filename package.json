@@ -15,7 +15,7 @@
   },
   "workspaces": [
     "apps/uloan-contract",
-    "apps/uloan-backend",
+    "apps/uloan-matcher",
     "apps/uloan-web"
   ],
   "packageManager": "yarn@3.0.2"
