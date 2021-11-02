@@ -7,6 +7,10 @@
     "typescript": "^4.4.4"
   },
   "dependencies": {
+    "dotenv": "^10.0.0",
     "prisma": "^3.3.0"
+  },
+  "scripts": {
+    "start:dev": "tsc && node dist/src/eventHandlers.js"
   }
 }

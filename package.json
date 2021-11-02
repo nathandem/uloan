@@ -18,5 +18,8 @@
     "apps/uloan-matcher",
     "apps/uloan-web"
   ],
-  "packageManager": "yarn@3.0.2"
+  "packageManager": "yarn@3.0.2",
+  "dependencies": {
+    "ethers": "^5.5.1"
+  }
 }

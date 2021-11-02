@@ -1,0 +1,1064 @@
+[
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "_stablecoin",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "constructor"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "capitalProviderId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amountRecouped",
+                "type": "uint256"
+            }
+        ],
+        "name": "CapitalProviderRecouped",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amountRecouped",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256[]",
+                "name": "capitalProviderIds",
+                "type": "uint256[]"
+            }
+        ],
+        "name": "LenderCapitalRecouped",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "loanId",
+                "type": "uint256"
+            }
+        ],
+        "name": "LoanMatchedWithCapital",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "loanId",
+                "type": "uint256"
+            }
+        ],
+        "name": "LoanPaidBack",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "loanId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint16",
+                "name": "numberOfEpochsPaid",
+                "type": "uint16"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint16",
+                "name": "totalNumberOfEpochsToPay",
+                "type": "uint16"
+            }
+        ],
+        "name": "LoanRepaymentMade",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "loanId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint8",
+                "name": "borrowerCreditScore",
+                "type": "uint8"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint16",
+                "name": "durationInDays",
+                "type": "uint16"
+            }
+        ],
+        "name": "LoanRequested",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "loanId",
+                "type": "uint256"
+            }
+        ],
+        "name": "LoanWithdrawn",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "capitalProviderId",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint8",
+                "name": "minRiskLevel",
+                "type": "uint8"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint8",
+                "name": "maxRiskLevel",
+                "type": "uint8"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint16",
+                "name": "lockUpPeriodInDays",
+                "type": "uint16"
+            }
+        ],
+        "name": "NewCapitalProvided",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "previousOwner",
+                "type": "address"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "newOwner",
+                "type": "address"
+            }
+        ],
+        "name": "OwnershipTransferred",
+        "type": "event"
+    },
+    {
+        "inputs": [],
+        "name": "EPOCH_DURATION_COEFFICIENT_BP",
+        "outputs": [
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "FEE_BP",
+        "outputs": [
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "FEE_TO_MATCH_INITIATOR_BP",
+        "outputs": [
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "FEE_TO_PROTOCOL_OWNER_BP",
+        "outputs": [
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "MAX_LOAN_AMOUNT",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "MAX_LOAN_DURATION_IN_DAYS",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "MAX_RISK_LEVEL",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "MIN_DEPOSIT_AMOUNT",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "MIN_LOAN_AMOUNT",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "MIN_LOAN_DURATION_IN_DAYS",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "MIN_LOCKUP_PERIOD_IN_DAYS",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "MIN_RISK_LEVEL",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "RISK_COEFFICIENT_BP",
+        "outputs": [
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "RISK_FREE_RATE_BP",
+        "outputs": [
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "ULOAN_EPOCH_IN_DAYS",
+        "outputs": [
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "ULOAN_EPOCH_IN_YEAR",
+        "outputs": [
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint8",
+                "name": "_creditScore",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint16",
+                "name": "_durationInEpochs",
+                "type": "uint16"
+            }
+        ],
+        "name": "_computeBorrowerInterestRateForPeriodInBasisPoint",
+        "outputs": [
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint8",
+                "name": "_riskLevel",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint16",
+                "name": "_durationInEpochs",
+                "type": "uint16"
+            }
+        ],
+        "name": "_computeLenderInterestRateForPeriodInBasisPoint",
+        "outputs": [
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint8",
+                "name": "_creditScore",
+                "type": "uint8"
+            }
+        ],
+        "name": "_creditScoreToRiskLevel",
+        "outputs": [
+            {
+                "internalType": "uint8",
+                "name": "",
+                "type": "uint8"
+            }
+        ],
+        "stateMutability": "pure",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "lender",
+                "type": "address"
+            }
+        ],
+        "name": "_getLendersToCapitalProviders",
+        "outputs": [
+            {
+                "internalType": "uint256[]",
+                "name": "",
+                "type": "uint256[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint8",
+                "name": "_riskLevel",
+                "type": "uint8"
+            }
+        ],
+        "name": "_riskLevelToCreditScore",
+        "outputs": [
+            {
+                "internalType": "uint8",
+                "name": "",
+                "type": "uint8"
+            }
+        ],
+        "stateMutability": "pure",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes32",
+                "name": "c__0x2549d0df",
+                "type": "bytes32"
+            }
+        ],
+        "name": "c_0x2549d0df",
+        "outputs": [],
+        "stateMutability": "pure",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "name": "capitalProviders",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "lender",
+                "type": "address"
+            },
+            {
+                "internalType": "uint8",
+                "name": "minRiskLevel",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint8",
+                "name": "maxRiskLevel",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint16",
+                "name": "lockUpPeriodInDays",
+                "type": "uint16"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amountProvided",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amountAvailable",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "_amount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint8",
+                "name": "_minRiskLevel",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint8",
+                "name": "_maxRiskLevel",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint16",
+                "name": "_lockUpPeriodInDays",
+                "type": "uint16"
+            }
+        ],
+        "name": "depositCapital",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "_capitalProviderId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "_loanIndex",
+                "type": "uint256"
+            }
+        ],
+        "name": "getCapitalProviderFundedLoanId",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "_capitalProviderId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getCapitalProviderFundedLoanIdsLength",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "_amount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint8",
+                "name": "_creditScore",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint16",
+                "name": "_durationInDays",
+                "type": "uint16"
+            }
+        ],
+        "name": "getInterestEstimateForPeriodInBasisPoint",
+        "outputs": [
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "_loanId",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "_lenderIndex",
+                "type": "uint256"
+            }
+        ],
+        "name": "getLoanLender",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "lenderId",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "amountContributed",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "totalAmountToGetBack",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "amountPaidBack",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct ULoan.Lender",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "_loanId",
+                "type": "uint256"
+            }
+        ],
+        "name": "getLoanLendersLength",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getLoansMatchingFees",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getProtocolOwnerFees",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "_amount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint8",
+                "name": "_minRiskLevel",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint8",
+                "name": "_maxRiskLevel",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint16",
+                "name": "_lockUpPeriodInDays",
+                "type": "uint16"
+            }
+        ],
+        "name": "getReturnEstimateForPeriodInBasisPoint",
+        "outputs": [
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            },
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "lastCapitalProviderId",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "lastLoanId",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "name": "lendersToCapitalProviders",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "name": "loans",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "borrower",
+                "type": "address"
+            },
+            {
+                "internalType": "uint8",
+                "name": "creditScore",
+                "type": "uint8"
+            },
+            {
+                "internalType": "uint256",
+                "name": "lastActionTimestamp",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint16",
+                "name": "durationInDays",
+                "type": "uint16"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amountRequested",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amountToRepay",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint16",
+                "name": "totalNumberOfEpochsToPay",
+                "type": "uint16"
+            },
+            {
+                "internalType": "uint16",
+                "name": "numberOfEpochsPaid",
+                "type": "uint16"
+            },
+            {
+                "internalType": "uint256",
+                "name": "amountToRepayEveryEpoch",
+                "type": "uint256"
+            },
+            {
+                "internalType": "enum ULoan.LoanState",
+                "name": "state",
+                "type": "uint8"
+            },
+            {
+                "internalType": "string",
+                "name": "closeReason",
+                "type": "string"
+            },
+            {
+                "internalType": "address",
+                "name": "matchMaker",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "matchMakerFee",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "protocolOwnerFee",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "amount",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct ULoan.ProposedLoanCapitalProvider[]",
+                "name": "_proposedCapitalProviders",
+                "type": "tuple[]"
+            },
+            {
+                "internalType": "uint256",
+                "name": "_loanId",
+                "type": "uint256"
+            }
+        ],
+        "name": "matchLoanWithCapital",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "owner",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "_loanId",
+                "type": "uint256"
+            }
+        ],
+        "name": "payLoan",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "recoupAllCapital",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "_capitalProviderId",
+                "type": "uint256"
+            }
+        ],
+        "name": "recoupCapitalPerCapitalProvided",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "renounceOwnership",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "_amount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint16",
+                "name": "_durationInDays",
+                "type": "uint16"
+            }
+        ],
+        "name": "requestLoan",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "stablecoin",
+        "outputs": [
+            {
+                "internalType": "contract IERC20",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "newOwner",
+                "type": "address"
+            }
+        ],
+        "name": "transferOwnership",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "_loanId",
+                "type": "uint256"
+            }
+        ],
+        "name": "withdrawLoanFunds",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    }
+]
