@@ -17,7 +17,6 @@ contract ULoan is Ownable {
     IERC20 public stablecoin;
 
     uint16 public ULOAN_EPOCH_IN_DAYS = 7;  // arbitrary value to be debated
-    uint16 public ULOAN_EPOCH_IN_YEAR = 52;
 
     uint256 public MIN_DEPOSIT_AMOUNT = 10e18;  // arbitrary value to be debated
     uint256 public MIN_LOCKUP_PERIOD_IN_DAYS = ULOAN_EPOCH_IN_DAYS;  // arbitrary value to be debated
@@ -45,8 +44,7 @@ contract ULoan is Ownable {
         uint8 minRiskLevel;  // the least risky value is MIN_RISK_LEVEL
         uint8 maxRiskLevel;  // the most risky value is MAX_RISK_LEVEL
         uint16 lockUpPeriodInDays;  // constant used for loan matching, giving the max number of days that the funds can be locked in a loan
-        uint256 amountProvided;  // constant value, this value won't ever change. New deposits by existing lenders leads to the creation of new CapitalProvider structs
-        uint256 amountAvailable;  // at the beginning, amountAvailable == amountProvided, but it will change over time because 1) funds will be lent, 2) interests will be earnt, 3) lender will recoup some or all of this amount
+        uint256 amountAvailable;  // at the beginning, amountAvailable is the amount provided, but it will change over time because 1) funds will be lent, 2) interests will be earnt, 3) lender will recoup some or all of this amount
         uint256[] fundedLoanIds;  // note: not included in the `public` getter (`capitalProviders`), hence `getCapitalProviderFundedLoanIdsLength` and `getCapitalProviderFundedLoanId`
     }
     uint256 public lastCapitalProviderId;
@@ -93,13 +91,13 @@ contract ULoan is Ownable {
 
     // EVENTS
     event NewCapitalProvided(uint256 capitalProviderId, uint256 amount, uint8 minRiskLevel, uint8 maxRiskLevel, uint16 lockUpPeriodInDays);
-    event LenderCapitalRecouped(uint256 amountRecouped, uint256[] capitalProviderIds);
-    event CapitalProviderRecouped(uint256 capitalProviderId, uint256 amountRecouped);
+    event LenderCapitalRecouped(uint256[] capitalProviderIds);
+    event CapitalProviderRecouped(uint256 capitalProviderId);
     event LoanRequested(uint256 loanId, uint256 amount, uint8 borrowerCreditScore, uint16 durationInDays);
     event LoanWithdrawn(uint256 loanId);
     event LoanRepaymentMade(uint256 loanId, uint16 numberOfEpochsPaid, uint16 totalNumberOfEpochsToPay);
     event LoanPaidBack(uint256 loanId);
-    event LoanMatchedWithCapital(uint256 loanId);  // listeners should query the protocol to get the detail of the capital providers attached to the loan
+    event LoanMatchedWithCapital(uint256 loanId, address matchMaker, ProposedLoanCapitalProvider[] proposedLoanCapitalProviders);
 
 
     // CONSTRUCTOR
@@ -165,7 +163,6 @@ contract ULoan is Ownable {
         newCapitalProvider.minRiskLevel = _minRiskLevel;
         newCapitalProvider.maxRiskLevel = _maxRiskLevel;
         newCapitalProvider.lockUpPeriodInDays = _lockUpPeriodInDays;
-        newCapitalProvider.amountProvided = _amount;
         newCapitalProvider.amountAvailable = _amount;
 
         lendersToCapitalProviders[msg.sender].push(lastCapitalProviderId);
@@ -194,7 +191,7 @@ contract ULoan is Ownable {
         bool success = stablecoin.transfer(msg.sender, amountToRecoup);
         require(success, "The transfer of funds from ULoan to your account failed");
 
-        emit LenderCapitalRecouped(amountToRecoup, lenderCapitalProviders);
+        emit LenderCapitalRecouped(lenderCapitalProviders);
     }
 
     /*
@@ -215,7 +212,7 @@ contract ULoan is Ownable {
 
         capitalProvider.amountAvailable = 0;
 
-        emit CapitalProviderRecouped(_capitalProviderId, amountToRecoup);
+        emit CapitalProviderRecouped(_capitalProviderId);
     }
 
     /* BORROWER FUNCTIONS */
@@ -408,7 +405,7 @@ contract ULoan is Ownable {
         loan.lastActionTimestamp = block.timestamp;
         loan.matchMaker = msg.sender;
 
-        emit LoanMatchedWithCapital(_loanId);
+        emit LoanMatchedWithCapital(_loanId, msg.sender, _proposedCapitalProviders);
     }
 
     /*
@@ -502,7 +499,7 @@ contract ULoan is Ownable {
     /*
      * Trick to return a dynamic storage array: have Solidity create a new variable which casts it.
      */
-    function _getLendersToCapitalProviders(address lender) public view returns (uint256[] memory) {
+    function getLenderCapitalProviders(address lender) public view returns (uint256[] memory) {
         uint256[] memory lenderCapitalProvided = lendersToCapitalProviders[lender];
         require(lenderCapitalProvided.length > 0, "No capital provided by this account");
 

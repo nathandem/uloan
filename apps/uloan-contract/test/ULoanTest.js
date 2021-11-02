@@ -182,10 +182,9 @@ describe("ULoanTest", () => {
                 expect(newCapitalProvider.minRiskLevel).to.eq(valid_min_risk);
                 expect(newCapitalProvider.maxRiskLevel).to.eq(valid_max_risk);
                 expect(newCapitalProvider.lockUpPeriodInDays).to.eq(valid_lock_period_in_days);
-                expect(newCapitalProvider.amountProvided).to.eq(valid_amount);
                 expect(newCapitalProvider.amountAvailable).to.eq(valid_amount);
 
-                const aliceCapitalProvidedRaw = await uloan._getLendersToCapitalProviders(alice.address);
+                const aliceCapitalProvidedRaw = await uloan.getLenderCapitalProviders(alice.address);
                 const aliceCapitalProvidedParsed = aliceCapitalProvidedRaw.map(n => n.toNumber());  // only cast to number because for sure under max JS number value
                 expect(aliceCapitalProvidedParsed).to.deep.eq([1]);
             });
@@ -230,7 +229,7 @@ describe("ULoanTest", () => {
 
                 await stablecoinMock.mock.transfer.withArgs(alice.address, valid_amount).returns(true);
                 await expect(uloan.connect(alice).recoupAllCapital())
-                    .to.emit(uloan, "LenderCapitalRecouped").withArgs(valid_amount, [1]);
+                    .to.emit(uloan, "LenderCapitalRecouped").withArgs([1]);
 
                 aliceCapitalProvided = await uloan.capitalProviders(1);
                 expect(aliceCapitalProvided.amountAvailable).to.eq(0);
@@ -647,10 +646,12 @@ describe("ULoanTest", () => {
 
             describe("Core logic", () => {
                 it("Should emit LoanMatchedWithCapital when the loan is matched with capital", async () => {
+                    // Waffle doesn't support assertion on arrays nested in struct and arrays of struct - https://github.com/EthWorks/Waffle/issues/245
+                    // So no check of the arguments in the event with `withArgs`.
                     await expect(uloan.matchLoanWithCapital(
                         [{ id: 1, amount: valid_amount }, { id: 2, amount: valid_amount }],
                         1
-                    )).to.emit(uloan, "LoanMatchedWithCapital").withArgs(1);
+                    )).to.emit(uloan, "LoanMatchedWithCapital");
                 });
 
                 it("Should adjust the accepted capital provider states (attach the loanId and reduce their amounts available)", async () => {
