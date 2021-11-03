@@ -1,19 +1,15 @@
 {
   "name": "@uloan/contract",
   "version": "1.0.0",
-  "main": "index.js",
-  "license": "MIT",
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.2",
     "@nomiclabs/hardhat-waffle": "^2.0.1",
+    "@openzeppelin/contracts": "^4.3.2",
     "chai": "^4.3.4",
     "ethereum-waffle": "^3.4.0",
     "ethers": "^5.4.7",
     "hardhat": "^2.6.4",
     "solidity-coverage": "^0.7.17"
-  },
-  "dependencies": {
-    "@openzeppelin/contracts": "^4.3.2"
   },
   "scripts": {
     "startHardHatChain": "hardhat node",
@@ -21,5 +17,6 @@
     "deploy:local": "hardhat run scripts/deployToHardhat.js --network localhost",
     "testWithoutCoverage": "hardhat test",
     "testWithCoverage": "hardhat coverage && open ./coverage/index.html"
-  }
+  },
+  "dependencies": {}
 }
