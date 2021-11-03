@@ -205,7 +205,7 @@ contract ULoan is Ownable {
         uint256 amountToRecoup = capitalProvider.amountAvailable;
 
         require(capitalProvider.lender == msg.sender, "You can't withdraw funds you didn't provide in the first place");
-        require(amountToRecoup >= 0, "You currently have nothing to withdraw");
+        require(amountToRecoup > 0, "You currently have nothing to withdraw");
 
         bool success = stablecoin.transfer(capitalProvider.lender, amountToRecoup);
         require(success, "The transfer of funds from ULoan to your account failed");

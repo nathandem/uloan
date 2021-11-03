@@ -274,6 +274,14 @@ describe("ULoanTest", () => {
                     .to.be.revertedWith("You can't withdraw funds you didn't provide in the first place");
             });
 
+            it("Fails if capital provided is already to 0", async () => {
+                await _signerDepositCapital(alice);
+                await uloan.__testOnly_setCapitalProviderAvailableCapital(1, 0);
+
+                await expect(uloan.connect(alice).recoupCapitalPerCapitalProvided(1))
+                    .to.be.revertedWith("You currently have nothing to withdraw");
+            });
+
             it("Fails if ERC20 transfer of funds failed", async () => {
                 await _signerDepositCapital(alice);
 
