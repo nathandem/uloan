@@ -1,8 +1,13 @@
+require('dotenv').config();
+
 import { ethers } from 'ethers';
-// import { sql } from './postgres';
+import { PrismaClient } from '@prisma/client'
 import uloanAbi from '../abis/Uloan.json';
 
-require('dotenv').config();
+const prisma = new PrismaClient({
+    log: ['query', 'info', 'warn', 'error'],
+    errorFormat: 'pretty',
+});
 
 
 const provider = new ethers.providers.JsonRpcProvider(process.env.NODE_URL);
@@ -44,20 +49,81 @@ const uloan = new ethers.Contract(process.env.ULOAN_ADDRESS, uloanAbi, provider)
 // TODO: make sure event LoanMatchedWithCapital returns `ProposedLoanCapitalProvider[]` as 2nd arg
 
 
-export default function eventHandlers() {
-    const LOAN_STATES = {
-        REQUESTED: 'REQUESTED',
-        FUNDED: 'FUNDED',
-        WITHDRAWN: 'WITHDRAWN',
-        PAYED_BACK: 'PAYED_BACK',
-        CLOSED: 'CLOSED',
-    };
+export default async function eventHandlers() {
+    const ZERO = '0';
 
-    uloan.on('NewCapitalProvided', async (capitalProviderId, amount, minRiskLevel, maxRiskLevel, lockUpPeriodInDays, event) => {
-        console.log(`NewCapitalProvided event`);
+    uloan.on('NewCapitalProvided', async (
+        capitalProviderId: ethers.BigNumber,
+        amount: ethers.BigNumber,
+        minRiskLevel: number,  // passed as number because uint8 in contract
+        maxRiskLevel: number,  // passed as number because uint8 in contract
+        lockUpPeriodInDays: number,  // passed as number because uint16 in contract
+        event: ethers.Event,
+    ) => {
+        const newCapitalProviderId = capitalProviderId.toString();
 
-        console.log(event);
+        console.log(`NewCapitalProvided event for capitalProviderId: ${newCapitalProviderId}`);
+
+        // ethers.js event listener sometimes take past events when initiated,
+        // use `upsert` to avoid conflicts
+        const newCapitalProviderData = {
+            id: newCapitalProviderId,
+            amountAvailable: amount.toString(),
+            minRisk: minRiskLevel,
+            maxRisk: maxRiskLevel,
+            lockUpPeriodInDays,
+        };
+
+        try {
+            await prisma.capitalProvider.upsert({
+                where: { id: newCapitalProviderId },
+                update: newCapitalProviderData,
+                create: newCapitalProviderData,
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    });
+
+    uloan.on('CapitalProviderRecouped', async (capitalProviderId: ethers.BigNumber) => {
+        const capitalProviderIdToSetToZero = capitalProviderId.toString();
+
+        console.log(`CapitalProviderRecouped event for capitalProviderId: ${capitalProviderIdToSetToZero}`);
+
+        try {
+            await prisma.capitalProvider.update({
+                where: { id: capitalProviderIdToSetToZero },
+                data: { amountAvailable: ZERO },
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    });
+
+    uloan.on('LenderCapitalRecouped', async (capitalProviderIds: ethers.BigNumber[]) => {
+        const capitalProviderIdsToSetToZero = capitalProviderIds.map(
+            capitalProviderId => capitalProviderId.toString()
+        );
+
+        console.log(`LenderCapitalRecouped event for capitalProviderIds: ${capitalProviderIdsToSetToZero}`);
+
+        try {
+            await prisma.capitalProvider.updateMany({
+                where: {
+                    id: { in: capitalProviderIdsToSetToZero },
+                },
+                data: { amountAvailable: ZERO },
+            });
+        } catch (e) {
+            console.error(e);
+        }
     });
 }
 
-eventHandlers();
+eventHandlers()
+    .catch((e) => {
+        throw e
+    })
+    .finally(async () => {
+        await prisma.$disconnect()
+    });

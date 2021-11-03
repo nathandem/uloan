@@ -9,3 +9,39 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+// important note: all values stored/represented by uint256 in the contract should be stored as String (or Decimal)
+
+model CapitalProvider {
+  // value of `id` is set on-chain
+  id                        String  @id
+  amountAvailable           String  @db.VarChar(30)
+  minRisk                   Int
+  maxRisk                   Int
+  lockUpPeriodInDays        Int
+
+  loanMatchedByMatcher      Match?
+}
+
+model Loan {
+  // value of `id` is set on-chain
+  id                        String  @id
+  amountRequested           String  @db.VarChar(30)
+  creditScore               Int
+  durationInDays            Int
+  filled                    Boolean
+
+  lendersMatchedByMatcher   Match?
+}
+
+// more about relation tables: https://www.prisma.io/docs/concepts/components/prisma-schema/relations/many-to-many-relations#relation-tables
+model Match {
+  loan                      Loan                @relation(fields: [loanId], references: [id])
+  loanId                    String
+  capitalProvider           CapitalProvider     @relation(fields: [capitalProviderId], references: [id])
+  capitalProviderId         String
+  amountContributed         String              @db.VarChar(30)
+  feesTaken                 Boolean
+
+  @@id([loanId, capitalProviderId])
+}

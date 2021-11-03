@@ -18,12 +18,6 @@
                 "internalType": "uint256",
                 "name": "capitalProviderId",
                 "type": "uint256"
-            },
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amountRecouped",
-                "type": "uint256"
             }
         ],
         "name": "CapitalProviderRecouped",
@@ -32,12 +26,6 @@
     {
         "anonymous": false,
         "inputs": [
-            {
-                "indexed": false,
-                "internalType": "uint256",
-                "name": "amountRecouped",
-                "type": "uint256"
-            },
             {
                 "indexed": false,
                 "internalType": "uint256[]",
@@ -56,6 +44,30 @@
                 "internalType": "uint256",
                 "name": "loanId",
                 "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "address",
+                "name": "matchMaker",
+                "type": "address"
+            },
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "id",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "amount",
+                        "type": "uint256"
+                    }
+                ],
+                "indexed": false,
+                "internalType": "struct ULoan.ProposedLoanCapitalProvider[]",
+                "name": "proposedLoanCapitalProviders",
+                "type": "tuple[]"
             }
         ],
         "name": "LoanMatchedWithCapital",
@@ -395,19 +407,6 @@
         "type": "function"
     },
     {
-        "inputs": [],
-        "name": "ULOAN_EPOCH_IN_YEAR",
-        "outputs": [
-            {
-                "internalType": "uint16",
-                "name": "",
-                "type": "uint16"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
         "inputs": [
             {
                 "internalType": "uint8",
@@ -477,25 +476,6 @@
     {
         "inputs": [
             {
-                "internalType": "address",
-                "name": "lender",
-                "type": "address"
-            }
-        ],
-        "name": "_getLendersToCapitalProviders",
-        "outputs": [
-            {
-                "internalType": "uint256[]",
-                "name": "",
-                "type": "uint256[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
                 "internalType": "uint8",
                 "name": "_riskLevel",
                 "type": "uint8"
@@ -509,19 +489,6 @@
                 "type": "uint8"
             }
         ],
-        "stateMutability": "pure",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "bytes32",
-                "name": "c__0x2549d0df",
-                "type": "bytes32"
-            }
-        ],
-        "name": "c_0x2549d0df",
-        "outputs": [],
         "stateMutability": "pure",
         "type": "function"
     },
@@ -554,11 +521,6 @@
                 "internalType": "uint16",
                 "name": "lockUpPeriodInDays",
                 "type": "uint16"
-            },
-            {
-                "internalType": "uint256",
-                "name": "amountProvided",
-                "type": "uint256"
             },
             {
                 "internalType": "uint256",
@@ -664,6 +626,25 @@
                 "internalType": "uint16",
                 "name": "",
                 "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "lender",
+                "type": "address"
+            }
+        ],
+        "name": "getLenderCapitalProviders",
+        "outputs": [
+            {
+                "internalType": "uint256[]",
+                "name": "",
+                "type": "uint256[]"
             }
         ],
         "stateMutability": "view",
