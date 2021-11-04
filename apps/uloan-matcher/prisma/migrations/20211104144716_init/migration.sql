@@ -15,7 +15,7 @@ CREATE TABLE "Loan" (
     "amountRequested" VARCHAR(30) NOT NULL,
     "creditScore" INTEGER NOT NULL,
     "durationInDays" INTEGER NOT NULL,
-    "filled" BOOLEAN NOT NULL,
+    "filled" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "Loan_pkey" PRIMARY KEY ("id")
 );
@@ -25,16 +25,11 @@ CREATE TABLE "Match" (
     "loanId" TEXT NOT NULL,
     "capitalProviderId" TEXT NOT NULL,
     "amountContributed" VARCHAR(30) NOT NULL,
-    "feesTaken" BOOLEAN NOT NULL,
+    "isInitiatedByUs" BOOLEAN NOT NULL DEFAULT false,
+    "feesTaken" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "Match_pkey" PRIMARY KEY ("loanId","capitalProviderId")
 );
-
--- CreateIndex
-CREATE UNIQUE INDEX "Match_capitalProviderId_key" ON "Match"("capitalProviderId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Match_loanId_key" ON "Match"("loanId");
 
 -- AddForeignKey
 ALTER TABLE "Match" ADD CONSTRAINT "Match_loanId_fkey" FOREIGN KEY ("loanId") REFERENCES "Loan"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

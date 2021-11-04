@@ -20,7 +20,7 @@ model CapitalProvider {
   maxRisk                   Int
   lockUpPeriodInDays        Int
 
-  loanMatchedByMatcher      Match?
+  loansMatchedByMatcher     Match[]
 }
 
 model Loan {
@@ -29,9 +29,9 @@ model Loan {
   amountRequested           String  @db.VarChar(30)
   creditScore               Int
   durationInDays            Int
-  filled                    Boolean
+  filled                    Boolean @default(false)
 
-  lendersMatchedByMatcher   Match?
+  lendersMatchedByMatcher   Match[]
 }
 
 // more about relation tables: https://www.prisma.io/docs/concepts/components/prisma-schema/relations/many-to-many-relations#relation-tables
@@ -41,7 +41,8 @@ model Match {
   capitalProvider           CapitalProvider     @relation(fields: [capitalProviderId], references: [id])
   capitalProviderId         String
   amountContributed         String              @db.VarChar(30)
-  feesTaken                 Boolean
+  isInitiatedByUs           Boolean             @default(false)
+  feesTaken                 Boolean             @default(false)
 
   @@id([loanId, capitalProviderId])
 }

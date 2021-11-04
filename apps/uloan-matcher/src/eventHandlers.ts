@@ -1,14 +1,18 @@
 require('dotenv').config();
 
 import { ethers } from 'ethers';
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from '@prisma/client';
 import uloanAbi from '../abis/Uloan.json';
 
+
 const prisma = new PrismaClient({
+    rejectOnNotFound: true,
     log: ['query', 'info', 'warn', 'error'],
     errorFormat: 'pretty',
 });
 
+// config
+const MATCHER_ADDRESS = process.env.MATCHER_ADDRESS;
 
 const provider = new ethers.providers.JsonRpcProvider(process.env.NODE_URL);
 const uloan = new ethers.Contract(process.env.ULOAN_ADDRESS, uloanAbi, provider);
@@ -40,17 +44,154 @@ const uloan = new ethers.Contract(process.env.ULOAN_ADDRESS, uloanAbi, provider)
 //      - Match:
 //          - only consider loans with state `Requested`/`filled:false`
 //          - only consider capitalProviders with `amountAvailable` > 0
+//          Note: query the smart contract before proposing a match because the funds of the CapitalProvider might have been withdrawn (or, later, the loan request might have been retracted)
 //      - Get fees:
 //          - keep track of the loan: wait for LoanPaidBack then get the fees
 // Store:
-//      - LoanMatchedWithCapital => only store the matches if msg.sender == matchMaker (loanId, lenderId[], amountContributed[], feesTaken:false)
+//      - LoanMatchedWithCapital => store all the matches, else not possible to know which lenders to update afterwards
 //      - LoanPaidBack => get fees THEN feesTaken:true
 
 // TODO: make sure event LoanMatchedWithCapital returns `ProposedLoanCapitalProvider[]` as 2nd arg
 
+interface LoanCapitalProvider {
+    id: ethers.BigNumber;
+    amount: ethers.BigNumber;
+};
 
 export default async function eventHandlers() {
     const ZERO = '0';
+
+    uloan.on('LoanRequested', async (
+        loanId: ethers.BigNumber,
+        amount: ethers.BigNumber,
+        borrowerCreditScore: number,
+        durationInDays: number
+    ) => {
+        const newloanId = loanId.toString();
+        console.log(`LoanRequested event for loanId: ${newloanId}`);
+
+        // ethers.js event listener sometimes take past events when initiated,
+        // use `upsert` to avoid conflicts
+        const newLoanData = {
+            id: newloanId,
+            amountRequested: amount.toString(),
+            creditScore: borrowerCreditScore,
+            durationInDays,
+            filled: false,
+        };
+
+        try {
+            await prisma.loan.upsert({
+                where: { id: newloanId },
+                update: newLoanData,
+                create: newLoanData,
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    });
+
+    uloan.on('LoanMatchedWithCapital', async (
+        loanId: ethers.BigNumber,
+        matchMaker: string,
+        loanCapitalProviders: LoanCapitalProvider[],
+        event: ethers.Event,
+    ) => {
+        const parsedLoanId = loanId.toString();
+        console.log(`LoanRequested event for loanId: ${parsedLoanId}`);
+
+        const updateMatchedLoan = prisma.loan.update({
+            where: { id: parsedLoanId },
+            data: { filled: true },
+        });
+
+        const updateCapitalProvidersAmountAvailable = [];
+        const createLoanCapitalProviderMatchs = [];
+
+        for (const loanCapitalProvider of loanCapitalProviders) {
+            const parsedCapitalProviderId = loanCapitalProvider.id.toString();
+
+            const loanCapitalProviderToReduce = await prisma.capitalProvider.findUnique({
+                where: { id: parsedCapitalProviderId }
+            });
+            // unfortunately atomic number operations are not available on strings and decimals, so I need to pull the values first
+            // https://www.prisma.io/docs/reference/api-reference/prisma-client-reference#atomic-number-operations
+            const newAmountAvailable = ethers.BigNumber.from(loanCapitalProviderToReduce?.amountAvailable).sub(loanCapitalProvider.amount);
+
+            updateCapitalProvidersAmountAvailable.push(
+                prisma.capitalProvider.update({
+                    where: { id: parsedCapitalProviderId },
+                    data: { amountAvailable: newAmountAvailable.toString() },
+                })
+            );
+
+            const newMatchData = {
+                loanId: parsedLoanId,
+                capitalProviderId: parsedCapitalProviderId,
+                amountContributed: loanCapitalProvider.amount.toString(),
+                isInitiatedByUs: (matchMaker === MATCHER_ADDRESS) ? true : false,
+                feesTaken: false,
+            };
+            createLoanCapitalProviderMatchs.push(
+                prisma.match.upsert({
+                    where: {
+                        // this syntax is really weird...
+                        loanId_capitalProviderId: {
+                            loanId: parsedLoanId,
+                            capitalProviderId: parsedCapitalProviderId,
+                        }
+                    },
+                    update: newMatchData,
+                    create: newMatchData,
+                })
+            );
+        }
+
+        // Wrap operations in a big transaction
+        try {
+            await prisma.$transaction([
+                updateMatchedLoan,
+                ...updateCapitalProvidersAmountAvailable,
+                ...createLoanCapitalProviderMatchs
+            ]);
+        } catch (e) {
+            console.error(e);
+        }
+    });
+
+    uloan.on("LoanPaidBack", async (loanId: ethers.BigNumber) => {
+        const completedLoanId = loanId.toString();
+        console.log(`LoanPaidBack event for loanId: ${completedLoanId}`);
+
+        try {
+            const completedLoan = await prisma.loan.findUnique({
+                where: { id: completedLoanId },
+                include: { lendersMatchedByMatcher: true },
+            });
+
+            const capitalProviderIdsToUpdate = completedLoan.lendersMatchedByMatcher.map(match => match.capitalProviderId);
+            const updateQueries = [];
+            for (const capitalProviderIdToUpdate of capitalProviderIdsToUpdate) {
+                const latestAmountAvailable = (await uloan.capitalProviders(capitalProviderIdToUpdate)).amountAvailable;
+
+                updateQueries.push(
+                    prisma.capitalProvider.update({
+                        where: { id: capitalProviderIdToUpdate },
+                        data: { amountAvailable: latestAmountAvailable },
+                    })
+                );
+            }
+
+            try {
+                // just a way to group the queries together in one call
+                await prisma.$transaction([ ...updateQueries ]);
+            } catch (e) {
+                console.error(e);
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    });
 
     uloan.on('NewCapitalProvided', async (
         capitalProviderId: ethers.BigNumber,
@@ -61,7 +202,6 @@ export default async function eventHandlers() {
         event: ethers.Event,
     ) => {
         const newCapitalProviderId = capitalProviderId.toString();
-
         console.log(`NewCapitalProvided event for capitalProviderId: ${newCapitalProviderId}`);
 
         // ethers.js event listener sometimes take past events when initiated,
@@ -87,7 +227,6 @@ export default async function eventHandlers() {
 
     uloan.on('CapitalProviderRecouped', async (capitalProviderId: ethers.BigNumber) => {
         const capitalProviderIdToSetToZero = capitalProviderId.toString();
-
         console.log(`CapitalProviderRecouped event for capitalProviderId: ${capitalProviderIdToSetToZero}`);
 
         try {
@@ -104,7 +243,6 @@ export default async function eventHandlers() {
         const capitalProviderIdsToSetToZero = capitalProviderIds.map(
             capitalProviderId => capitalProviderId.toString()
         );
-
         console.log(`LenderCapitalRecouped event for capitalProviderIds: ${capitalProviderIdsToSetToZero}`);
 
         try {
