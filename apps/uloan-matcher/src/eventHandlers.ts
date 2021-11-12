@@ -1,21 +1,8 @@
-require('dotenv').config();
-
 import { ethers } from 'ethers';
-import { PrismaClient } from '@prisma/client';
-import uloanAbi from '../abis/Uloan.json';
 
+import prisma from './db';
+import conf from './conf';
 
-const prisma = new PrismaClient({
-    rejectOnNotFound: true,
-    log: ['query', 'info', 'warn', 'error'],
-    errorFormat: 'pretty',
-});
-
-// config
-const MATCHER_ADDRESS = process.env.MATCHER_ADDRESS;
-
-const provider = new ethers.providers.JsonRpcProvider(process.env.NODE_URL);
-const uloan = new ethers.Contract(process.env.ULOAN_ADDRESS, uloanAbi, provider);
 
 // event NewCapitalProvided(uint256 capitalProviderId, uint256 amount, uint8 minRiskLevel, uint8 maxRiskLevel, uint16 lockUpPeriodInDays);
 // event LenderCapitalRecouped(uint256[] capitalProviderIds);
@@ -58,7 +45,7 @@ interface LoanCapitalProvider {
     amount: ethers.BigNumber;
 };
 
-export default async function eventHandlers() {
+export default async function eventHandlers(uloan: ethers.Contract) {
     const ZERO = '0';
 
     uloan.on('LoanRequested', async (
@@ -129,7 +116,7 @@ export default async function eventHandlers() {
                 loanId: parsedLoanId,
                 capitalProviderId: parsedCapitalProviderId,
                 amountContributed: loanCapitalProvider.amount.toString(),
-                isInitiatedByUs: (matchMaker === MATCHER_ADDRESS) ? true : false,
+                isInitiatedByUs: (matchMaker === conf.MATCHER_ADDRESS) ? true : false,
                 feesTaken: false,
             };
             createLoanCapitalProviderMatchs.push(
@@ -159,7 +146,7 @@ export default async function eventHandlers() {
         }
     });
 
-    uloan.on("LoanPaidBack", async (loanId: ethers.BigNumber) => {
+    uloan.on('LoanPaidBack', async (loanId: ethers.BigNumber) => {
         const completedLoanId = loanId.toString();
         console.log(`LoanPaidBack event for loanId: ${completedLoanId}`);
 
@@ -257,11 +244,3 @@ export default async function eventHandlers() {
         }
     });
 }
-
-eventHandlers()
-    .catch((e) => {
-        throw e
-    })
-    .finally(async () => {
-        await prisma.$disconnect()
-    });

@@ -12,6 +12,6 @@
     "ethers": "^5.5.1"
   },
   "scripts": {
-    "start:dev": "tsc && node dist/src/eventHandlers.js"
+    "start:dev": "tsc && node dist/src/server.js"
   }
 }
